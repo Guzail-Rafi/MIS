@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Smart ServiceConnect MIS</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="script.js" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Main navigation">
+        <div class="brand">
+          <div class="brand-mark">V</div>
+          <div>
+            <p class="eyebrow">VINSAK</p>
+            <h1>Smart ServiceConnect MIS</h1>
+          </div>
+        </div>
+
+        <nav class="nav-list">
+          <button class="nav-item active" data-target="home">Command Center</button>
+          <button class="nav-item" data-target="tickets">Service Tickets</button>
+          <button class="nav-item" data-target="amc">AMC & Warranty</button>
+          <button class="nav-item" data-target="inventory">Inventory Locator</button>
+          <button class="nav-item" data-target="quotes">Quotations</button>
+          <button class="nav-item" data-target="machines">Machine History</button>
+          <button class="nav-item" data-target="reports">Power BI View</button>
+        </nav>
+
+        <div class="sync-panel">
+          <span class="status-dot"></span>
+          <div>
+            <p>Central workflow status</p>
+            <strong id="syncStatus">Ready</strong>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">After-sales, service, stores, accounts and management</p>
+            <h2>Connected service operations dashboard</h2>
+          </div>
+          <div class="topbar-actions">
+            <div class="search-wrap">
+              <span>Search</span>
+              <input id="globalSearch" type="search" placeholder="customer, ticket, part, machine" />
+            </div>
+            <button id="exportData" class="icon-button" title="Export prototype data" aria-label="Export prototype data">Export</button>
+            <button id="resetData" class="ghost-button">Reset Demo</button>
+          </div>
+        </header>
+
+        <section id="home" class="page-section">
+          <div class="section-title">
+            <div>
+              <p class="eyebrow">Home</p>
+              <h3>Management overview</h3>
+            </div>
+            <p id="todayStamp" class="section-note"></p>
+          </div>
+
+          <div class="metric-grid" id="metricGrid"></div>
+
+          <div class="dashboard-grid">
+            <section class="panel wide-panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Live service queue</p>
+                  <h4>Critical work in progress</h4>
+                </div>
+                <span class="badge danger" id="urgentCount">0 urgent</span>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Ticket</th>
+                      <th>Customer</th>
+                      <th>Machine</th>
+                      <th>AMC</th>
+                      <th>Priority</th>
+                      <th>Status</th>
+                      <th>Engineer</th>
+                    </tr>
+                  </thead>
+                  <tbody id="homeTicketRows"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">AI automation</p>
+                  <h4>Reminders and escalation alerts</h4>
+                </div>
+              </div>
+              <div id="alertList" class="alert-list"></div>
+            </section>
+          </div>
+
+          <div class="operations-grid">
+            <section class="panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Workflow</p>
+                  <h4>Service process flow</h4>
+                </div>
+              </div>
+              <div class="flow-line">
+                <span>Portal</span>
+                <span>SAP/CRM</span>
+                <span>Ticket</span>
+                <span>AMC</span>
+                <span>Engineer</span>
+                <span>Stores</span>
+                <span>Power BI</span>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Engineer workload</p>
+                  <h4>Assigned service hours</h4>
+                </div>
+              </div>
+              <div id="engineerBars" class="bar-list"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Stores</p>
+                  <h4>Parts requiring attention</h4>
+                </div>
+              </div>
+              <div id="partsAttention" class="compact-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="tickets" class="page-section">
+          <div class="section-title">
+            <div>
+              <p class="eyebrow">Service tickets</p>
+              <h3>Customer and internal service portal</h3>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <form id="ticketForm" class="panel form-panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">New request</p>
+                  <h4>Raise service ticket</h4>
+                </div>
+              </div>
+
+              <div class="form-row two-col">
+                <label>
+                  Customer
+                  <input name="customer" required placeholder="e.g. Gulf Pack Industries" />
+                </label>
+                <label>
+                  Request source
+                  <select name="source">
+                    <option>Customer Portal</option>
+                    <option>Sales Team</option>
+                    <option>Service Team</option>
+                    <option>Internal Staff</option>
+                  </select>
+                </label>
+              </div>
+
+              <div class="form-row two-col">
+                <label>
+                  Machine
+                  <input name="machine" required placeholder="e.g. VINSAK LSR-330" />
+                </label>
+                <label>
+                  Serial number
+                  <input name="serial" required placeholder="e.g. VSK-330-2218" />
+                </label>
+              </div>
+
+              <div class="form-row two-col">
+                <label>
+                  Problem type
+                  <select name="type">
+                    <option>Breakdown support</option>
+                    <option>Preventive maintenance</option>
+                    <option>Installation support</option>
+                    <option>Spare part request</option>
+                    <option>Customer complaint</option>
+                  </select>
+                </label>
+                <label>
+                  AMC status
+                  <select name="amc">
+                    <option>Active</option>
+                    <option>Expiring Soon</option>
+                    <option>Warranty</option>
+                    <option>Chargeable</option>
+                  </select>
+                </label>
+              </div>
+
+              <div class="form-row two-col">
+                <label>
+                  Engineer
+                  <select name="engineer" id="engineerSelect"></select>
+                </label>
+                <label>
+                  Required part
+                  <select name="part" id="partSelect"></select>
+                </label>
+              </div>
+
+              <label>
+                Issue summary
+                <textarea name="issue" rows="4" required placeholder="Machine stopped during label finishing run"></textarea>
+              </label>
+
+              <div class="form-actions">
+                <button type="submit" class="primary-button">Create Ticket</button>
+                <span class="form-hint" id="ticketHint">AI priority will be calculated on save.</span>
+              </div>
+            </form>
+
+            <section class="panel table-panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Central record</p>
+                  <h4>Ticket register</h4>
+                </div>
+                <div class="filter-tabs" role="group" aria-label="Ticket status filter">
+                  <button class="filter-tab active" data-ticket-filter="all">All</button>
+                  <button class="filter-tab" data-ticket-filter="Open">Open</button>
+                  <button class="filter-tab" data-ticket-filter="Delayed">Delayed</button>
+                  <button class="filter-tab" data-ticket-filter="Completed">Completed</button>
+                </div>
+              </div>
+              <div class="table-wrap tall">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Customer</th>
+                      <th>Issue</th>
+                      <th>Part</th>
+                      <th>Priority</th>
+                      <th>Status</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="ticketRows"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section id="amc" class="page-section">
+          <div class="section-title">
+            <div>
+              <p class="eyebrow">AMC and warranty</p>
+              <h3>Contract entitlement tracking</h3>
+            </div>
+          </div>
+
+          <div class="form-grid compact-form-grid">
+            <form id="amcForm" class="panel form-panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Contract record</p>
+                  <h4>Add AMC details</h4>
+                </div>
+              </div>
+              <label>
+                Customer
+                <input name="customer" required placeholder="Customer name" />
+              </label>
+              <div class="form-row two-col">
+                <label>
+                  Machine serial
+                  <input name="serial" required placeholder="VSK-..." />
+                </label>
+                <label>
+                  Expiry date
+                  <input name="expiry" type="date" required />
+                </label>
+              </div>
+              <div class="form-row two-col">
+                <label>
+                  Hours left
+                  <input name="hoursLeft" type="number" min="0" value="40" required />
+                </label>
+                <label>
+                  Visits left
+                  <input name="visitsLeft" type="number" min="0" value="2" required />
+                </label>
+              </div>
+              <button type="submit" class="primary-button">Save AMC</button>
+            </form>
+
+            <section class="panel table-panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Entitlement ledger</p>
+                  <h4>AMC utilization</h4>
+                </div>
+              </div>
+              <div id="amcCards" class="contract-grid"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="inventory" class="page-section">
+          <div class="section-title">
+            <div>
+              <p class="eyebrow">Inventory locator</p>
+              <h3>Spare parts and consumables visibility</h3>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <form id="partForm" class="panel form-panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Stores update</p>
+                  <h4>Add or update part location</h4>
+                </div>
+              </div>
+              <div class="form-row two-col">
+                <label>
+                  Part code
+                  <input name="code" required placeholder="INK-UV-440" />
+                </label>
+                <label>
+                  Part name
+                  <input name="name" required placeholder="UV curing lamp" />
+                </label>
+              </div>
+              <div class="form-row three-col">
+                <label>
+                  Quantity
+                  <input name="qty" type="number" min="0" value="6" required />
+                </label>
+                <label>
+                  Minimum stock
+                  <input name="min" type="number" min="0" value="3" required />
+                </label>
+                <label>
+                  Lead time days
+                  <input name="leadTime" type="number" min="0" value="14" required />
+                </label>
+              </div>
+              <div class="form-row four-col">
+                <label>
+                  Warehouse
+                  <input name="warehouse" required placeholder="W1" />
+                </label>
+                <label>
+                  Rack
+                  <input name="rack" required placeholder="B" />
+                </label>
+                <label>
+                  Shelf
+                  <input name="shelf" required placeholder="3" />
+                </label>
+                <label>
+                  Bin
+                  <input name="bin" required placeholder="07" />
+                </label>
+              </div>
+              <button type="submit" class="primary-button">Save Part</button>
+            </form>
+
+            <section class="panel table-panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Digital location</p>
+                  <h4>Parts register</h4>
+                </div>
+              </div>
+              <div class="table-wrap tall">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Code</th>
+                      <th>Name</th>
+                      <th>Qty</th>
+                      <th>Location</th>
+                      <th>Lead time</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="partRows"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section id="quotes" class="page-section">
+          <div class="section-title">
+            <div>
+              <p class="eyebrow">Sales follow-up</p>
+              <h3>Quotation tracking</h3>
+            </div>
+          </div>
+
+          <div class="form-grid compact-form-grid">
+            <form id="quoteForm" class="panel form-panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Quotation</p>
+                  <h4>Add follow-up</h4>
+                </div>
+              </div>
+              <label>
+                Customer
+                <input name="customer" required placeholder="Customer name" />
+              </label>
+              <div class="form-row two-col">
+                <label>
+                  Quote value
+                  <input name="value" type="number" min="0" value="12500" required />
+                </label>
+                <label>
+                  Stage
+                  <select name="stage">
+                    <option>Sent</option>
+                    <option>Negotiation</option>
+                    <option>Awaiting PO</option>
+                    <option>Won</option>
+                    <option>Lost</option>
+                  </select>
+                </label>
+              </div>
+              <label>
+                Follow-up date
+                <input name="followUp" type="date" required />
+              </label>
+              <button type="submit" class="primary-button">Save Quote</button>
+            </form>
+
+            <section class="panel table-panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Open sales work</p>
+                  <h4>Quotation follow-up register</h4>
+                </div>
+              </div>
+              <div class="table-wrap tall">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Customer</th>
+                      <th>Value</th>
+                      <th>Stage</th>
+                      <th>Follow-up</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="quoteRows"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section id="machines" class="page-section">
+          <div class="section-title">
+            <div>
+              <p class="eyebrow">Machine history</p>
+              <h3>Installed base service record</h3>
+            </div>
+          </div>
+
+          <div class="machine-grid" id="machineCards"></div>
+        </section>
+
+        <section id="reports" class="page-section">
+          <div class="section-title">
+            <div>
+              <p class="eyebrow">Power BI view</p>
+              <h3>Management performance dashboard</h3>
+            </div>
+          </div>
+
+          <div class="reports-grid">
+            <section class="panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Service resolution</p>
+                  <h4>Ticket status mix</h4>
+                </div>
+              </div>
+              <div id="statusDonut" class="donut-chart" aria-label="Ticket status chart"></div>
+              <div id="statusLegend" class="legend-list"></div>
+            </section>
+
+            <section class="panel wide-panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Data foundation</p>
+                  <h4>Prototype backend store</h4>
+                </div>
+                <span class="badge success" id="recordCount">0 records</span>
+              </div>
+              <pre id="backendPreview" class="backend-preview"></pre>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Roadmap</p>
+                  <h4>Predictive maintenance readiness</h4>
+                </div>
+              </div>
+              <div class="readiness-meter">
+                <div class="readiness-fill" id="readinessFill"></div>
+                <span id="readinessText">0%</span>
+              </div>
+              <div class="roadmap-list">
+                <span>Structured tickets</span>
+                <span>Part replacement history</span>
+                <span>AMC utilization trend</span>
+                <span>Failure pattern data</span>
+              </div>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

@@ -1,4 +1,5 @@
 const STORAGE_KEY = "vinsak-smart-serviceconnect-mis-v1";
+const DATA_VERSION = 4;
 
 const today = new Date("2026-06-24T12:00:00+04:00");
 
@@ -176,12 +177,119 @@ const seedData = {
     { name: "Sara Thomas", skill: "Security printing", location: "Dubai" },
     { name: "Faisal Khan", skill: "Slitter rewinder", location: "Abu Dhabi" }
   ],
+  handoffs: [
+    {
+      id: "HOF-201",
+      type: "Ticket",
+      recordId: "TKT-1048",
+      customer: "Prime Labels LLC",
+      department: "Service",
+      owner: "Arun Mehta",
+      nextAction: "Update delayed visit outcome and confirm revised SLA",
+      status: "Delayed",
+      due: "2026-06-24",
+      linkedTo: "AMC-310 / SNS-TEN-09",
+      note: "Management visibility required before customer callback."
+    },
+    {
+      id: "HOF-202",
+      type: "Ticket",
+      recordId: "TKT-1049",
+      customer: "Oasis Packaging",
+      department: "Stores",
+      owner: "Stores Team",
+      nextAction: "Confirm PHD-CLN-22 availability before engineer dispatch",
+      status: "Waiting",
+      due: "2026-06-25",
+      linkedTo: "AMC-311 / PHD-CLN-22",
+      note: "Free visits exhausted; accounts must review chargeable risk."
+    },
+    {
+      id: "HOF-203",
+      type: "AMC",
+      recordId: "AMC-311",
+      customer: "Oasis Packaging",
+      department: "Accounts",
+      owner: "Accounts Team",
+      nextAction: "Approve chargeable work beyond AMC entitlement",
+      status: "Pending",
+      due: "2026-06-25",
+      linkedTo: "TKT-1049",
+      note: "AMC has zero included visits remaining."
+    },
+    {
+      id: "HOF-204",
+      type: "Quotation",
+      recordId: "QT-882",
+      customer: "Oasis Packaging",
+      department: "Sales",
+      owner: "Sales Team",
+      nextAction: "Call customer and update negotiation stage",
+      status: "Overdue",
+      due: "2026-06-22",
+      linkedTo: "QT-882",
+      note: "Quotation follow-up is overdue by two days."
+    },
+    {
+      id: "HOF-207",
+      type: "Quotation",
+      recordId: "QT-883",
+      customer: "Metro Flexibles",
+      department: "Sales",
+      owner: "Sales Team",
+      nextAction: "Confirm whether customer will issue PO",
+      status: "Pending",
+      due: "2026-06-26",
+      linkedTo: "QT-883",
+      note: "Quotation is awaiting PO and follow-up is due soon."
+    },
+    {
+      id: "HOF-208",
+      type: "Quotation",
+      recordId: "QT-884",
+      customer: "Gulf Pack Industries",
+      department: "Sales",
+      owner: "Sales Team",
+      nextAction: "Escalate overdue quotation follow-up",
+      status: "Overdue",
+      due: "2026-06-20",
+      linkedTo: "QT-884",
+      note: "Quotation follow-up is overdue by four days."
+    },
+    {
+      id: "HOF-205",
+      type: "Ticket",
+      recordId: "TKT-1050",
+      customer: "SecurePrint Gulf",
+      department: "Service",
+      owner: "Sara Thomas",
+      nextAction: "Complete preventive maintenance visit report",
+      status: "In progress",
+      due: "2026-06-24",
+      linkedTo: "AMC-312 / FLT-UV-12",
+      note: "Report should update machine history and AMC utilization."
+    },
+    {
+      id: "HOF-206",
+      type: "Part",
+      recordId: "BLA-SLT-18",
+      customer: "Metro Flexibles",
+      department: "Stores",
+      owner: "Stores Team",
+      nextAction: "Raise reorder request for slitter blade set",
+      status: "Waiting",
+      due: "2026-06-26",
+      linkedTo: "TKT-1051",
+      note: "Part is below minimum stock level."
+    }
+  ],
   lastSync: "2026-06-24 18:00 GST"
 };
 
 let state = loadState();
 let ticketFilter = "all";
 let searchTerm = "";
+let pipelineTimer = null;
 
 const els = {};
 
@@ -200,6 +308,8 @@ function bindElements() {
     "alertList",
     "engineerBars",
     "partsAttention",
+    "handoffCount",
+    "coordinationRows",
     "ticketRows",
     "engineerSelect",
     "partSelect",
@@ -215,7 +325,12 @@ function bindElements() {
     "readinessText",
     "syncStatus",
     "todayStamp",
-    "globalSearch"
+    "globalSearch",
+    "detailModal",
+    "detailModalTitle",
+    "detailModalMeta",
+    "detailModalBody",
+    "detailModalClose"
   ].forEach((id) => {
     els[id] = document.getElementById(id);
   });
@@ -243,6 +358,7 @@ function bindEvents() {
     searchTerm = event.target.value.trim().toLowerCase();
     renderTables();
     renderMachines();
+    renderCoordination();
   });
 
   document.getElementById("ticketForm").addEventListener("submit", saveTicket);
@@ -251,6 +367,56 @@ function bindEvents() {
   document.getElementById("quoteForm").addEventListener("submit", saveQuote);
   document.getElementById("exportData").addEventListener("click", exportData);
   document.getElementById("resetData").addEventListener("click", resetData);
+
+  els.metricGrid.addEventListener("click", (event) => {
+    const card = event.target.closest("[data-metric]");
+    if (!card) return;
+    openMetricDetails(card.dataset.metric);
+  });
+
+  els.metricGrid.addEventListener("keydown", (event) => {
+    const card = event.target.closest("[data-metric]");
+    if (!card || (event.key !== "Enter" && event.key !== " ")) return;
+    event.preventDefault();
+    openMetricDetails(card.dataset.metric);
+  });
+
+  els.amcCards.addEventListener("click", (event) => {
+    const card = event.target.closest("[data-amc-id]");
+    if (!card) return;
+    openAmcDetails(card.dataset.amcId);
+  });
+
+  els.amcCards.addEventListener("keydown", (event) => {
+    const card = event.target.closest("[data-amc-id]");
+    if (!card || (event.key !== "Enter" && event.key !== " ")) return;
+    event.preventDefault();
+    openAmcDetails(card.dataset.amcId);
+  });
+
+  els.coordinationRows.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-advance-handoff]");
+    if (button) {
+      advanceHandoff(button.dataset.advanceHandoff);
+      return;
+    }
+
+    const row = event.target.closest("[data-handoff-id]");
+    if (!row) return;
+    openHandoffPipeline(row.dataset.handoffId);
+  });
+
+  els.coordinationRows.addEventListener("keydown", (event) => {
+    const row = event.target.closest("[data-handoff-id]");
+    if (!row || event.target.closest("button") || (event.key !== "Enter" && event.key !== " ")) return;
+    event.preventDefault();
+    openHandoffPipeline(row.dataset.handoffId);
+  });
+
+  els.detailModalClose.addEventListener("click", closeDetailModal);
+  els.detailModal.addEventListener("click", (event) => {
+    if (event.target === els.detailModal) closeDetailModal();
+  });
 }
 
 function setInitialDates() {
@@ -266,14 +432,44 @@ function setInitialDates() {
 function loadState() {
   const stored = localStorage.getItem(STORAGE_KEY);
   if (!stored) {
-    return structuredClone(seedData);
+    return migrateState(structuredClone(seedData));
   }
 
   try {
-    return { ...structuredClone(seedData), ...JSON.parse(stored) };
+    const loadedState = migrateState({ ...structuredClone(seedData), ...JSON.parse(stored) });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(loadedState));
+    return loadedState;
   } catch {
-    return structuredClone(seedData);
+    return migrateState(structuredClone(seedData));
   }
+}
+
+function migrateState(nextState) {
+  const storedVersion = Number(nextState.dataVersion || 0);
+  if (!Array.isArray(nextState.tickets)) {
+    nextState.tickets = structuredClone(seedData.tickets);
+  }
+  if (!Array.isArray(nextState.handoffs)) {
+    nextState.handoffs = [];
+  }
+
+  if (storedVersion < 2) {
+    const primeLabelsTicket = nextState.tickets.find((ticket) => ticket.id === "TKT-1048");
+    if (primeLabelsTicket && primeLabelsTicket.status === "Open") {
+      primeLabelsTicket.status = "Delayed";
+    }
+  }
+
+  if (storedVersion < 4) {
+    seedData.handoffs.forEach((handoff) => {
+      if (!nextState.handoffs.some((item) => item.id === handoff.id)) {
+        nextState.handoffs.push(structuredClone(handoff));
+      }
+    });
+  }
+
+  nextState.dataVersion = DATA_VERSION;
+  return nextState;
 }
 
 function persistState(message = "Saved to prototype backend") {
@@ -293,6 +489,7 @@ function renderAll() {
   renderSelectors();
   renderMetrics();
   renderAlerts();
+  renderCoordination();
   renderEngineerBars();
   renderPartsAttention();
   renderTables();
@@ -319,26 +516,26 @@ function renderSelectors() {
 }
 
 function renderMetrics() {
-  const openTickets = state.tickets.filter((ticket) => ticket.status !== "Completed").length;
+  const openTickets = state.tickets.filter((ticket) => ticket.status === "Open").length;
   const delayed = state.tickets.filter((ticket) => ticket.status === "Delayed").length;
-  const expiringAmc = state.amcs.filter((amc) => daysUntil(amc.expiry) <= 45).length;
-  const overdueQuotes = state.quotes.filter((quote) => quote.stage !== "Won" && quote.stage !== "Lost" && daysUntil(quote.followUp) < 0).length;
-  const lowStock = state.parts.filter((part) => Number(part.qty) <= Number(part.min)).length;
+  const expiringAmc = state.amcs.filter((amc) => amcStatus(amc) === "Expiring").length;
+  const overdueQuotes = state.quotes.filter((quote) => quoteStatus(quote) === "Overdue").length;
+  const lowStock = state.parts.filter((part) => partStatus(part) === "LowStock").length;
   const serviceHours = state.tickets.reduce((sum, ticket) => sum + Number(ticket.hoursUsed || 0), 0);
 
   const metrics = [
-    { label: "Open tickets", value: openTickets, note: "service cases active", tone: "teal", tag: "ST" },
-    { label: "Delayed tickets", value: delayed, note: "SLA escalation risk", tone: "red", tag: "SLA" },
-    { label: "AMC expiring", value: expiringAmc, note: "within 45 days", tone: "gold", tag: "AMC" },
-    { label: "Quote overdue", value: overdueQuotes, note: "needs sales follow-up", tone: "blue", tag: "QT" },
-    { label: "Low stock parts", value: lowStock, note: "below minimum level", tone: "red", tag: "SP" },
-    { label: "Service hours", value: serviceHours, note: "logged this cycle", tone: "teal", tag: "HR" }
+    { key: "open-tickets", label: "Open tickets", value: openTickets, note: "status open", tone: "teal", tag: "ST" },
+    { key: "delayed-tickets", label: "Delayed tickets", value: delayed, note: "SLA escalation risk", tone: "red", tag: "SLA" },
+    { key: "amc-expiring", label: "AMC expiring", value: expiringAmc, note: "within 45 days", tone: "gold", tag: "AMC" },
+    { key: "quote-overdue", label: "Quote overdue", value: overdueQuotes, note: "needs sales follow-up", tone: "blue", tag: "QT" },
+    { key: "low-stock-parts", label: "Low stock parts", value: lowStock, note: "below minimum level", tone: "red", tag: "SP" },
+    { key: "service-hours", label: "Service hours", value: serviceHours, note: "logged this cycle", tone: "teal", tag: "HR" }
   ];
 
   els.metricGrid.innerHTML = metrics
     .map(
       (metric) => `
-        <article class="metric-card">
+        <article class="metric-card" data-metric="${metric.key}" role="button" tabindex="0" aria-label="View ${metric.label} details">
           <div class="metric-top">
             <p>${metric.label}</p>
             <span class="metric-tag ${metric.tone}">${metric.tag}</span>
@@ -364,8 +561,11 @@ function renderHomeTickets() {
     ? rows
         .map(
           (ticket) => `
-            <tr>
-              <td class="id-cell">${ticket.id}</td>
+            <tr class="ticket-row status-${className(ticket.status)}">
+              <td class="id-cell">
+                ${ticket.id}
+                <div><span class="badge mini-status ${ticket.status}">${ticket.status}</span></div>
+              </td>
               <td>${escapeHtml(ticket.customer)}</td>
               <td>
                 ${escapeHtml(ticket.machine)}
@@ -389,7 +589,7 @@ function renderTickets() {
     ? rows
         .map(
           (ticket) => `
-            <tr>
+            <tr class="ticket-row status-${className(ticket.status)}">
               <td class="id-cell">${ticket.id}</td>
               <td>
                 ${escapeHtml(ticket.customer)}
@@ -470,6 +670,58 @@ function renderAlerts() {
     : `<div class="alert-item"><strong>No escalations</strong><span>All active records are within target</span></div>`;
 }
 
+function renderCoordination() {
+  const handoffs = filterRecords(state.handoffs, [
+    "id",
+    "type",
+    "recordId",
+    "customer",
+    "department",
+    "owner",
+    "nextAction",
+    "status",
+    "linkedTo",
+    "note"
+  ]).sort((a, b) => handoffStatusRank(a.status) - handoffStatusRank(b.status) || daysUntil(a.due) - daysUntil(b.due));
+
+  const activeCount = state.handoffs.filter((handoff) => handoff.status !== "Completed").length;
+  els.handoffCount.textContent = `${activeCount} active`;
+
+  els.coordinationRows.innerHTML = handoffs.length
+    ? handoffs
+        .map((handoff) => {
+          const dueDays = daysUntil(handoff.due);
+          const dueText = dueDays < 0 ? `${Math.abs(dueDays)} days overdue` : dueDays === 0 ? "Due today" : `${dueDays} days left`;
+          return `
+            <tr class="handoff-row status-${className(handoff.status)}" data-handoff-id="${escapeHtml(handoff.id)}" tabindex="0" aria-label="View AI pipeline for ${escapeHtml(handoff.recordId)}">
+              <td>
+                <span class="id-cell">${escapeHtml(handoff.recordId)}</span>
+                <div class="small-muted">${escapeHtml(handoff.type)} - ${escapeHtml(handoff.customer)}</div>
+                <div class="small-muted">Linked: ${escapeHtml(handoff.linkedTo)}</div>
+              </td>
+              <td><span class="dept-pill">${escapeHtml(handoff.department)}</span></td>
+              <td>${escapeHtml(handoff.owner)}</td>
+              <td>
+                ${escapeHtml(handoff.nextAction)}
+                <div class="handoff-note">${escapeHtml(handoff.note)}</div>
+              </td>
+              <td><span class="badge ${className(handoff.status)}">${escapeHtml(handoff.status)}</span></td>
+              <td>
+                ${formatDate(handoff.due)}
+                <div class="small-muted">${dueText}</div>
+              </td>
+              <td>
+                <button class="row-button" data-advance-handoff="${escapeHtml(handoff.id)}">
+                  ${handoffActionLabel(handoff.status)}
+                </button>
+              </td>
+            </tr>
+          `;
+        })
+        .join("")
+    : emptyRow(7, "No matching department handoffs");
+}
+
 function renderEngineerBars() {
   const totals = new Map(state.engineers.map((engineer) => [engineer.name, 0]));
   state.tickets
@@ -539,10 +791,9 @@ function renderAmcs() {
     .map((amc) => {
       const used = Math.max(0, Number(amc.hoursTotal) - Number(amc.hoursLeft));
       const percentage = Number(amc.hoursTotal) ? Math.round((used / Number(amc.hoursTotal)) * 100) : 0;
-      const expiryDays = daysUntil(amc.expiry);
-      const badge = expiryDays <= 30 ? "Expiring" : "Active";
+      const badge = amcStatus(amc);
       return `
-        <article class="contract-card">
+        <article class="contract-card clickable-card" data-amc-id="${escapeHtml(amc.id)}" role="button" tabindex="0" aria-label="View ${escapeHtml(amc.customer)} AMC details">
           <div class="panel-heading">
             <div>
               <p class="eyebrow">${escapeHtml(amc.id)}</p>
@@ -569,7 +820,7 @@ function renderQuotes() {
   els.quoteRows.innerHTML = quotes.length
     ? quotes
         .map((quote) => {
-          const status = quote.stage === "Won" || quote.stage === "Lost" ? quote.stage : daysUntil(quote.followUp) < 0 ? "Overdue" : "Pending";
+          const status = quoteStatus(quote);
           return `
             <tr>
               <td class="id-cell">${escapeHtml(quote.id)}</td>
@@ -583,6 +834,591 @@ function renderQuotes() {
         })
         .join("")
     : emptyRow(6, "No matching quotations");
+}
+
+function openMetricDetails(metricKey) {
+  const detail = metricDetail(metricKey);
+  if (!detail) return;
+
+  const records = detail.records();
+  els.detailModalTitle.textContent = detail.title;
+  els.detailModalMeta.textContent = detail.meta(records);
+  els.detailModalBody.innerHTML = renderDetailTable(detail.columns, records, detail.emptyMessage, detail.footer);
+
+  if (typeof els.detailModal.showModal === "function") {
+    els.detailModal.showModal();
+  } else {
+    els.detailModal.setAttribute("open", "");
+  }
+}
+
+function closeDetailModal() {
+  clearPipelineTimer();
+  if (typeof els.detailModal.close === "function") {
+    els.detailModal.close();
+  } else {
+    els.detailModal.removeAttribute("open");
+  }
+}
+
+function clearPipelineTimer() {
+  if (!pipelineTimer) return;
+  clearTimeout(pipelineTimer);
+  pipelineTimer = null;
+}
+
+function openHandoffPipeline(handoffId) {
+  const handoff = state.handoffs.find((item) => item.id === handoffId);
+  if (!handoff) return;
+
+  clearPipelineTimer();
+  els.detailModalTitle.textContent = "AI handoff pipeline";
+  els.detailModalMeta.textContent = `${handoff.recordId} - ${handoff.customer}`;
+  els.detailModalBody.innerHTML = renderPipelineLoading(handoff);
+
+  if (typeof els.detailModal.showModal === "function") {
+    els.detailModal.showModal();
+  } else {
+    els.detailModal.setAttribute("open", "");
+  }
+
+  pipelineTimer = setTimeout(() => {
+    if (!els.detailModal.open) return;
+    const pipeline = buildHandoffPipeline(handoff);
+    els.detailModalBody.innerHTML = renderHandoffPipeline(handoff, pipeline);
+    pipelineTimer = null;
+  }, 650);
+}
+
+function renderPipelineLoading(handoff) {
+  return `
+    <div class="ai-loading-panel">
+      <div class="ai-loader" aria-hidden="true">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+      <div>
+        <p class="eyebrow">AI coordination engine</p>
+        <h4>Connecting ${escapeHtml(handoff.type.toLowerCase())} record, department owner, entitlement, stock and reporting data</h4>
+        <p>Building a live pipeline for ${escapeHtml(handoff.recordId)} across ${escapeHtml(handoff.department)}, linked records and pending actions.</p>
+      </div>
+    </div>
+  `;
+}
+
+function buildHandoffPipeline(handoff) {
+  const context = handoffContext(handoff);
+  const currentState = handoff.status === "Delayed" || handoff.status === "Overdue" || handoff.status === "Waiting" ? "blocked" : "current";
+  const currentLabel = handoff.status === "Completed" ? "done" : currentState;
+
+  let steps;
+  if (handoff.type === "Ticket") {
+    steps = ticketPipelineSteps(handoff, context, currentLabel);
+  } else if (handoff.type === "AMC") {
+    steps = amcPipelineSteps(handoff, context, currentLabel);
+  } else if (handoff.type === "Quotation") {
+    steps = quotePipelineSteps(handoff, context, currentLabel);
+  } else {
+    steps = partPipelineSteps(handoff, context, currentLabel);
+  }
+
+  if (handoff.status === "Completed") {
+    steps = steps.map((step) => ({ ...step, state: "done" }));
+  }
+
+  const done = steps.filter((step) => step.state === "done");
+  const left = steps.filter((step) => step.state !== "done");
+  return {
+    context,
+    steps,
+    done,
+    left,
+    progress: steps.length ? Math.round((done.length / steps.length) * 100) : 0
+  };
+}
+
+function ticketPipelineSteps(handoff, context, currentLabel) {
+  const ticket = context.ticket;
+  const amc = context.amc;
+  const part = context.part;
+  return [
+    {
+      title: "Request captured",
+      owner: "Portal / CRM",
+      detail: ticket ? `${ticket.source} request for ${ticket.customer}` : "Ticket source loaded",
+      state: "done"
+    },
+    {
+      title: "Ticket registered",
+      owner: "Service",
+      detail: ticket ? `${ticket.priority} priority, ${ticket.status} status` : "Ticket register linked",
+      state: "done"
+    },
+    {
+      title: "AMC entitlement checked",
+      owner: "Accounts",
+      detail: amc ? `${amc.hoursLeft}/${amc.hoursTotal} hours and ${amc.visitsLeft}/${amc.visitsTotal} visits left` : "No matching AMC found",
+      state: amc ? "done" : "blocked"
+    },
+    {
+      title: "Part availability checked",
+      owner: "Stores",
+      detail: part ? `${part.code}: ${partStatusLabel(part)}, qty ${part.qty}, min ${part.min}` : "No part requirement linked",
+      state: part ? (partStatus(part) === "InStock" ? "done" : "blocked") : "pending"
+    },
+    {
+      title: "Engineer assigned",
+      owner: ticket ? ticket.engineer : handoff.owner,
+      detail: ticket ? `${ticket.engineer} assigned to ${ticket.machine}` : `${handoff.owner} assigned`,
+      state: "done"
+    },
+    {
+      title: "Department handoff action",
+      owner: handoff.department,
+      detail: handoff.nextAction,
+      state: currentLabel
+    },
+    {
+      title: "Customer update and closure",
+      owner: "Service / Management",
+      detail: "Confirm outcome, billing impact and customer communication",
+      state: "pending"
+    },
+    {
+      title: "Machine history and report updated",
+      owner: "Power BI",
+      detail: "Update service history, AMC utilization and management report",
+      state: ticket && ticket.status === "Completed" ? "done" : "pending"
+    }
+  ];
+}
+
+function amcPipelineSteps(handoff, context, currentLabel) {
+  const amc = context.amc;
+  const linkedTickets = context.linkedTickets;
+  return [
+    {
+      title: "AMC record loaded",
+      owner: "AMC register",
+      detail: amc ? `${amc.customer}, machine ${amc.serial}` : "AMC record linked",
+      state: "done"
+    },
+    {
+      title: "Expiry checked",
+      owner: "Accounts",
+      detail: amc ? `${formatDate(amc.expiry)} - ${Math.max(daysUntil(amc.expiry), 0)} days left` : "Expiry check pending",
+      state: "done"
+    },
+    {
+      title: "Entitlement balance checked",
+      owner: "Accounts",
+      detail: amc ? `${amc.hoursLeft}/${amc.hoursTotal} hours and ${amc.visitsLeft}/${amc.visitsTotal} visits left` : "Entitlement balance unavailable",
+      state: amc && (Number(amc.hoursLeft) <= 0 || Number(amc.visitsLeft) <= 0) ? "blocked" : "done"
+    },
+    {
+      title: "Related service tickets scanned",
+      owner: "Service",
+      detail: `${linkedTickets.length} linked ticket${linkedTickets.length === 1 ? "" : "s"} found`,
+      state: "done"
+    },
+    {
+      title: "Commercial approval",
+      owner: handoff.department,
+      detail: handoff.nextAction,
+      state: currentLabel
+    },
+    {
+      title: "Billing or renewal decision",
+      owner: "Accounts / Sales",
+      detail: "Mark work as included, chargeable or renewal follow-up",
+      state: "pending"
+    },
+    {
+      title: "Notify service team and update report",
+      owner: "Management",
+      detail: "Publish entitlement decision to service queue and dashboard",
+      state: "pending"
+    }
+  ];
+}
+
+function quotePipelineSteps(handoff, context, currentLabel) {
+  const quote = context.quote;
+  return [
+    {
+      title: "Quotation registered",
+      owner: "Sales",
+      detail: quote ? `AED ${Number(quote.value).toLocaleString("en-AE")} quotation for ${quote.customer}` : "Quotation record linked",
+      state: "done"
+    },
+    {
+      title: "Follow-up date monitored",
+      owner: "AI reminders",
+      detail: quote ? `${formatDate(quote.followUp)} - ${quoteStatus(quote)}` : "Follow-up monitor ready",
+      state: quote && quoteStatus(quote) === "Overdue" ? "blocked" : "done"
+    },
+    {
+      title: "Sales owner assigned",
+      owner: handoff.owner,
+      detail: `${handoff.owner} owns customer follow-up`,
+      state: "done"
+    },
+    {
+      title: "Customer response update",
+      owner: handoff.department,
+      detail: handoff.nextAction,
+      state: currentLabel
+    },
+    {
+      title: "Conversion status updated",
+      owner: "Sales / Accounts",
+      detail: quote ? `Current stage: ${quote.stage}` : "Stage update pending",
+      state: quote && (quote.stage === "Won" || quote.stage === "Lost") ? "done" : "pending"
+    },
+    {
+      title: "Management forecast updated",
+      owner: "Power BI",
+      detail: "Update overdue follow-up, pipeline value and conversion report",
+      state: "pending"
+    }
+  ];
+}
+
+function partPipelineSteps(handoff, context, currentLabel) {
+  const part = context.part;
+  return [
+    {
+      title: "Part record loaded",
+      owner: "Stores",
+      detail: part ? `${part.code} - ${part.name}` : "Part record linked",
+      state: "done"
+    },
+    {
+      title: "Stock threshold checked",
+      owner: "Inventory",
+      detail: part ? `Qty ${part.qty}, minimum ${part.min}, ${partStatusLabel(part)}` : "Stock threshold pending",
+      state: part && partStatus(part) === "InStock" ? "done" : "blocked"
+    },
+    {
+      title: "Stores action assigned",
+      owner: handoff.department,
+      detail: handoff.nextAction,
+      state: currentLabel
+    },
+    {
+      title: "Supplier or reorder decision",
+      owner: "Stores / Accounts",
+      detail: part ? `${part.leadTime} day lead time to plan customer impact` : "Supplier decision pending",
+      state: "pending"
+    },
+    {
+      title: "Service team notified",
+      owner: "Service",
+      detail: "Update linked service request with stock availability",
+      state: "pending"
+    },
+    {
+      title: "Inventory report updated",
+      owner: "Power BI",
+      detail: "Update low stock, lead time and reorder visibility",
+      state: "pending"
+    }
+  ];
+}
+
+function handoffContext(handoff) {
+  const linkText = String(handoff.linkedTo || "");
+  const ticket = state.tickets.find((item) => item.id === handoff.recordId || item.id === linkText);
+  const quote = state.quotes.find((item) => item.id === handoff.recordId || item.id === linkText);
+  const amc = state.amcs.find((item) => item.id === handoff.recordId || linkText.includes(item.id) || (ticket && item.serial === ticket.serial));
+  const part = state.parts.find((item) => item.code === handoff.recordId || linkText.includes(item.code) || (ticket && item.code === ticket.part));
+  const linkedTickets = amc ? state.tickets.filter((item) => item.serial === amc.serial) : [];
+  return { ticket, quote, amc, part, linkedTickets };
+}
+
+function renderHandoffPipeline(handoff, pipeline) {
+  const statusText = handoff.status === "Completed" ? "Pipeline completed" : `${pipeline.left.length} step${pipeline.left.length === 1 ? "" : "s"} left`;
+  return `
+    <div class="pipeline-hero">
+      <div>
+        <p class="eyebrow">AI coordination pipeline</p>
+        <h4>${escapeHtml(handoff.recordId)} - ${escapeHtml(handoff.customer)}</h4>
+        <p>${escapeHtml(handoff.note)}</p>
+      </div>
+      <span class="badge ${className(handoff.status)}">${escapeHtml(handoff.status)}</span>
+    </div>
+
+    <div class="detail-summary-grid">
+      <div class="detail-summary-item">
+        <span>Current department</span>
+        <strong>${escapeHtml(handoff.department)}</strong>
+      </div>
+      <div class="detail-summary-item">
+        <span>Owner</span>
+        <strong>${escapeHtml(handoff.owner)}</strong>
+      </div>
+      <div class="detail-summary-item">
+        <span>Due date</span>
+        <strong>${formatDate(handoff.due)}</strong>
+        <small>${handoffDueText(handoff.due)}</small>
+      </div>
+      <div class="detail-summary-item">
+        <span>Progress</span>
+        <strong>${pipeline.progress}%</strong>
+        <small>${statusText}</small>
+      </div>
+    </div>
+
+    <div class="pipeline-progress" aria-label="Pipeline progress">
+      <div style="width:${pipeline.progress}%"></div>
+    </div>
+
+    <div class="connection-strip" aria-label="Connected prototype modules">
+      ${pipeline.steps.map((step) => `<span>${escapeHtml(step.owner)}</span>`).join("")}
+    </div>
+
+    <div class="pipeline-grid">
+      ${pipeline.steps
+        .map(
+          (step, index) => `
+            <article class="pipeline-step ${step.state}">
+              <div class="step-index">${String(index + 1).padStart(2, "0")}</div>
+              <div>
+                <div class="step-top">
+                  <strong>${escapeHtml(step.title)}</strong>
+                  <span class="step-state">${stepStateLabel(step.state)}</span>
+                </div>
+                <p>${escapeHtml(step.detail)}</p>
+                <small>${escapeHtml(step.owner)}</small>
+              </div>
+            </article>
+          `
+        )
+        .join("")}
+    </div>
+
+    <div class="pipeline-split">
+      <section>
+        <p class="eyebrow">Done so far</p>
+        ${renderPipelineMiniList(pipeline.done, "No completed steps yet")}
+      </section>
+      <section>
+        <p class="eyebrow">Left to complete</p>
+        ${renderPipelineMiniList(pipeline.left, "No remaining steps")}
+      </section>
+    </div>
+  `;
+}
+
+function renderPipelineMiniList(steps, emptyMessage) {
+  return steps.length
+    ? `<div class="pipeline-mini-list">${steps.map((step) => `<span>${escapeHtml(step.title)}</span>`).join("")}</div>`
+    : `<div class="empty-detail">${escapeHtml(emptyMessage)}</div>`;
+}
+
+function openAmcDetails(amcId) {
+  const amc = state.amcs.find((item) => item.id === amcId);
+  if (!amc) return;
+
+  const linkedTickets = state.tickets.filter((ticket) => ticket.serial === amc.serial);
+  const usedHours = Math.max(0, Number(amc.hoursTotal) - Number(amc.hoursLeft));
+  const usedVisits = Math.max(0, Number(amc.visitsTotal) - Number(amc.visitsLeft));
+  const expiryDays = daysUntil(amc.expiry);
+  const status = amcStatus(amc);
+  const billingRisk = Number(amc.hoursLeft) <= 0 || Number(amc.visitsLeft) <= 0 ? "Chargeable review needed" : "Within entitlement";
+
+  els.detailModalTitle.textContent = `${amc.customer} AMC`;
+  els.detailModalMeta.textContent = `AMC utilization - ${amc.id}`;
+  els.detailModalBody.innerHTML = `
+    <div class="detail-summary-grid">
+      <div class="detail-summary-item">
+        <span>Machine serial</span>
+        <strong>${escapeHtml(amc.serial)}</strong>
+      </div>
+      <div class="detail-summary-item">
+        <span>Status</span>
+        <strong><span class="badge ${status}">${status}</span></strong>
+      </div>
+      <div class="detail-summary-item">
+        <span>Expiry</span>
+        <strong>${formatDate(amc.expiry)}</strong>
+        <small>${expiryDays >= 0 ? `${expiryDays} days left` : `${Math.abs(expiryDays)} days expired`}</small>
+      </div>
+      <div class="detail-summary-item">
+        <span>Billing flag</span>
+        <strong>${escapeHtml(billingRisk)}</strong>
+      </div>
+    </div>
+
+    <div class="entitlement-grid">
+      <section class="entitlement-card">
+        <p class="eyebrow">Service hours entitlement</p>
+        <h4>${usedHours} / ${Number(amc.hoursTotal)} used</h4>
+        <div class="util-track"><div class="util-fill" style="width:${utilizationPercent(usedHours, amc.hoursTotal)}%"></div></div>
+        <div class="contract-meta">
+          <span>Included hours <strong>${Number(amc.hoursTotal)}</strong></span>
+          <span>Remaining hours <strong>${Number(amc.hoursLeft)}</strong></span>
+          <span>Chargeable after <strong>${Number(amc.hoursTotal)} hours</strong></span>
+        </div>
+      </section>
+
+      <section class="entitlement-card">
+        <p class="eyebrow">Breakdown visit entitlement</p>
+        <h4>${usedVisits} / ${Number(amc.visitsTotal)} used</h4>
+        <div class="util-track"><div class="util-fill" style="width:${utilizationPercent(usedVisits, amc.visitsTotal)}%"></div></div>
+        <div class="contract-meta">
+          <span>Included visits <strong>${Number(amc.visitsTotal)}</strong></span>
+          <span>Remaining visits <strong>${Number(amc.visitsLeft)}</strong></span>
+          <span>Chargeable after <strong>${Number(amc.visitsTotal)} visits</strong></span>
+        </div>
+      </section>
+    </div>
+
+    <section class="detail-block">
+      <div class="panel-heading compact-heading">
+        <div>
+          <p class="eyebrow">Service history under this AMC</p>
+          <h4>Linked machine tickets</h4>
+        </div>
+      </div>
+      ${renderDetailTable(ticketColumns(), linkedTickets, "No service tickets linked to this AMC yet.")}
+    </section>
+  `;
+
+  if (typeof els.detailModal.showModal === "function") {
+    els.detailModal.showModal();
+  } else {
+    els.detailModal.setAttribute("open", "");
+  }
+}
+
+function metricDetail(metricKey) {
+  const details = {
+    "open-tickets": {
+      title: "Open tickets",
+      register: "Ticket register",
+      records: () => state.tickets.filter((ticket) => ticket.status === "Open"),
+      emptyMessage: "No open tickets found.",
+      columns: ticketColumns()
+    },
+    "delayed-tickets": {
+      title: "Delayed tickets",
+      register: "Ticket register",
+      records: () => state.tickets.filter((ticket) => ticket.status === "Delayed"),
+      emptyMessage: "No delayed tickets found.",
+      columns: ticketColumns()
+    },
+    "amc-expiring": {
+      title: "AMC expiring",
+      register: "AMC utilization",
+      records: () => state.amcs.filter((amc) => amcStatus(amc) === "Expiring"),
+      emptyMessage: "No expiring AMC records found.",
+      columns: [
+        { heading: "ID", cell: (amc) => `<span class="id-cell">${escapeHtml(amc.id)}</span>` },
+        { heading: "Customer", cell: (amc) => escapeHtml(amc.customer) },
+        { heading: "Machine serial", cell: (amc) => escapeHtml(amc.serial) },
+        { heading: "Expiry", cell: (amc) => `${formatDate(amc.expiry)}<div class="small-muted">${Math.max(daysUntil(amc.expiry), 0)} days left</div>` },
+        { heading: "Hours left", cell: (amc) => `${Number(amc.hoursLeft)} / ${Number(amc.hoursTotal)}` },
+        { heading: "Visits left", cell: (amc) => `${Number(amc.visitsLeft)} / ${Number(amc.visitsTotal)}` },
+        { heading: "Status", cell: (amc) => `<span class="badge ${amcStatus(amc)}">${amcStatus(amc)}</span>` }
+      ]
+    },
+    "quote-overdue": {
+      title: "Quote overdue",
+      register: "Quotation follow-up register",
+      records: () => state.quotes.filter((quote) => quoteStatus(quote) === "Overdue"),
+      emptyMessage: "No overdue quotation follow-ups found.",
+      columns: [
+        { heading: "ID", cell: (quote) => `<span class="id-cell">${escapeHtml(quote.id)}</span>` },
+        { heading: "Customer", cell: (quote) => escapeHtml(quote.customer) },
+        { heading: "Value", cell: (quote) => `AED ${Number(quote.value).toLocaleString("en-AE")}` },
+        { heading: "Stage", cell: (quote) => `<span class="badge ${className(quote.stage)}">${escapeHtml(quote.stage)}</span>` },
+        { heading: "Follow-up", cell: (quote) => `${formatDate(quote.followUp)}<div class="small-muted">${Math.abs(daysUntil(quote.followUp))} days overdue</div>` },
+        { heading: "Status", cell: (quote) => `<span class="badge ${quoteStatus(quote)}">${quoteStatus(quote)}</span>` }
+      ]
+    },
+    "low-stock-parts": {
+      title: "Low stock parts",
+      register: "Parts register",
+      records: () => state.parts.filter((part) => partStatus(part) === "LowStock"),
+      emptyMessage: "No low stock parts found.",
+      columns: [
+        { heading: "Code", cell: (part) => `<span class="id-cell">${escapeHtml(part.code)}</span>` },
+        { heading: "Name", cell: (part) => escapeHtml(part.name) },
+        { heading: "Qty", cell: (part) => Number(part.qty) },
+        { heading: "Minimum", cell: (part) => Number(part.min) },
+        { heading: "Location", cell: (part) => locationText(part) },
+        { heading: "Lead time", cell: (part) => `${Number(part.leadTime)} days` },
+        { heading: "Status", cell: (part) => `<span class="badge ${partStatus(part)}">${partStatusLabel(part)}</span>` }
+      ]
+    },
+    "service-hours": {
+      title: "Service hours",
+      register: "Ticket worklog",
+      records: () => state.tickets.filter((ticket) => Number(ticket.hoursUsed || 0) > 0),
+      emptyMessage: "No service hours logged.",
+      columns: [
+        { heading: "Ticket", cell: (ticket) => `<span class="id-cell">${escapeHtml(ticket.id)}</span>` },
+        { heading: "Customer", cell: (ticket) => escapeHtml(ticket.customer) },
+        { heading: "Machine", cell: (ticket) => `${escapeHtml(ticket.machine)}<div class="small-muted">${escapeHtml(ticket.serial)}</div>` },
+        { heading: "Engineer", cell: (ticket) => escapeHtml(ticket.engineer) },
+        { heading: "Status", cell: (ticket) => `<span class="badge ${ticket.status}">${ticket.status}</span>` },
+        { heading: "Hours", cell: (ticket) => `<strong>${Number(ticket.hoursUsed || 0)}</strong>` }
+      ],
+      footer: (records) => `Total service hours: ${records.reduce((sum, ticket) => sum + Number(ticket.hoursUsed || 0), 0)}`
+    }
+  };
+
+  const detail = details[metricKey];
+  if (!detail) return null;
+  return {
+    ...detail,
+    meta: detail.meta || ((records) => `${detail.register} - ${records.length} ${records.length === 1 ? "record" : "records"}`)
+  };
+}
+
+function ticketColumns() {
+  return [
+    { heading: "ID", cell: (ticket) => `<span class="id-cell">${escapeHtml(ticket.id)}</span>` },
+    { heading: "Customer", cell: (ticket) => `${escapeHtml(ticket.customer)}<div class="small-muted">${escapeHtml(ticket.source)}</div>` },
+    { heading: "Issue", cell: (ticket) => `${escapeHtml(ticket.type)}<div class="small-muted">${escapeHtml(ticket.issue)}</div>` },
+    { heading: "Part", cell: (ticket) => escapeHtml(ticket.part) },
+    { heading: "Priority", cell: (ticket) => `<span class="badge ${ticket.priority}">${ticket.priority}</span>` },
+    { heading: "Status", cell: (ticket) => `<span class="badge ${ticket.status}">${ticket.status}</span>` },
+    { heading: "Engineer", cell: (ticket) => escapeHtml(ticket.engineer) }
+  ];
+}
+
+function renderDetailTable(columns, records, emptyMessage, footer) {
+  if (!records.length) {
+    return `<div class="empty-detail">${escapeHtml(emptyMessage)}</div>`;
+  }
+
+  return `
+    <div class="table-wrap modal-table">
+      <table>
+        <thead>
+          <tr>${columns.map((column) => `<th>${escapeHtml(column.heading)}</th>`).join("")}</tr>
+        </thead>
+        <tbody>
+          ${records
+            .map(
+              (record) => `
+                <tr class="${recordStatusClass(record)}">${columns.map((column) => `<td>${column.cell(record)}</td>`).join("")}</tr>
+              `
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+    ${footer ? `<div class="modal-footer-note">${escapeHtml(footer(records))}</div>` : ""}
+  `;
+}
+
+function recordStatusClass(record) {
+  if (!record || !record.status) return "";
+  return `status-${className(record.status)}`;
 }
 
 function renderMachines() {
@@ -657,7 +1493,7 @@ function renderReports() {
     )
     .join("");
 
-  const recordCount = state.tickets.length + state.parts.length + state.amcs.length + state.quotes.length;
+  const recordCount = state.tickets.length + state.parts.length + state.amcs.length + state.quotes.length + state.handoffs.length;
   els.recordCount.textContent = `${recordCount} records`;
   els.backendPreview.textContent = JSON.stringify(
     {
@@ -668,6 +1504,7 @@ function renderReports() {
         spareParts: state.parts.length,
         amcContracts: state.amcs.length,
         quotations: state.quotes.length,
+        departmentHandoffs: state.handoffs.length,
         machineHistory: new Set(state.tickets.map((ticket) => ticket.serial)).size
       },
       sampleLatestTicket: state.tickets.at(-1),
@@ -707,6 +1544,18 @@ function saveTicket(event) {
   };
 
   state.tickets.push(ticket);
+  addHandoff({
+    type: "Ticket",
+    recordId: ticket.id,
+    customer: ticket.customer,
+    department: ticket.type === "Spare part request" ? "Stores" : "Service",
+    owner: ticket.type === "Spare part request" ? "Stores Team" : ticket.engineer,
+    nextAction: ticket.type === "Spare part request" ? `Confirm ${ticket.part} availability` : "Schedule engineer visit and update customer",
+    status: "Pending",
+    due: toDateInput(today),
+    linkedTo: `${ticket.amc} / ${ticket.part}`,
+    note: `${ticket.priority} priority request created from ${ticket.source}.`
+  });
   event.currentTarget.reset();
   renderSelectors();
   persistState(`Ticket ${ticket.id} saved`);
@@ -734,6 +1583,21 @@ function savePart(event) {
     state.parts.push(part);
   }
 
+  if (partStatus(part) !== "InStock" && !state.handoffs.some((handoff) => handoff.recordId === part.code && handoff.status !== "Completed")) {
+    addHandoff({
+      type: "Part",
+      recordId: part.code,
+      customer: "Stores",
+      department: "Stores",
+      owner: "Stores Team",
+      nextAction: `Raise reorder or supplier follow-up for ${part.name}`,
+      status: "Waiting",
+      due: toDateInput(today),
+      linkedTo: `${part.warehouse} / Rack ${part.rack} / Shelf ${part.shelf} / Bin ${part.bin}`,
+      note: `${partStatusLabel(part)} item needs inventory action.`
+    });
+  }
+
   event.currentTarget.reset();
   persistState(`Part ${part.code} saved`);
 }
@@ -753,6 +1617,20 @@ function saveAmc(event) {
   };
 
   state.amcs.push(amc);
+  if (amcStatus(amc) === "Expiring" || Number(amc.hoursLeft) <= 0 || Number(amc.visitsLeft) <= 0) {
+    addHandoff({
+      type: "AMC",
+      recordId: amc.id,
+      customer: amc.customer,
+      department: "Accounts",
+      owner: "Accounts Team",
+      nextAction: "Review AMC entitlement and renewal or chargeable billing",
+      status: "Pending",
+      due: toDateInput(today),
+      linkedTo: amc.serial,
+      note: "AMC requires commercial review before further service work."
+    });
+  }
   event.currentTarget.reset();
   setInitialDates();
   persistState(`AMC ${amc.id} saved`);
@@ -770,6 +1648,18 @@ function saveQuote(event) {
   };
 
   state.quotes.push(quote);
+  addHandoff({
+    type: "Quotation",
+    recordId: quote.id,
+    customer: quote.customer,
+    department: "Sales",
+    owner: "Sales Team",
+    nextAction: "Follow up customer response and update quotation stage",
+    status: quote.stage === "Won" || quote.stage === "Lost" ? "Completed" : quoteStatus(quote),
+    due: quote.followUp,
+    linkedTo: quote.id,
+    note: `Quotation value AED ${Number(quote.value).toLocaleString("en-AE")}.`
+  });
   event.currentTarget.reset();
   setInitialDates();
   persistState(`Quote ${quote.id} saved`);
@@ -780,6 +1670,28 @@ function toggleTicketStatus(ticketId) {
   if (!ticket) return;
   ticket.status = ticket.status === "Completed" ? "Open" : "Completed";
   persistState(`Ticket ${ticketId} updated`);
+}
+
+function advanceHandoff(handoffId) {
+  const handoff = state.handoffs.find((item) => item.id === handoffId);
+  if (!handoff) return;
+
+  if (handoff.status === "Completed") {
+    handoff.status = "Pending";
+  } else if (handoff.status === "In progress") {
+    handoff.status = "Completed";
+  } else {
+    handoff.status = "In progress";
+  }
+
+  persistState(`Handoff ${handoff.id} moved to ${handoff.status}`);
+}
+
+function addHandoff(handoff) {
+  state.handoffs.push({
+    id: nextId("HOF", state.handoffs),
+    ...handoff
+  });
 }
 
 function calculatePriority(ticket, part) {
@@ -809,6 +1721,54 @@ function partStatus(part) {
   if (Number(part.qty) <= Number(part.min)) return "LowStock";
   if (Number(part.leadTime) >= 21) return "Critical";
   return "InStock";
+}
+
+function amcStatus(amc) {
+  return daysUntil(amc.expiry) <= 45 ? "Expiring" : "Active";
+}
+
+function quoteStatus(quote) {
+  if (quote.stage === "Won" || quote.stage === "Lost") return quote.stage;
+  return daysUntil(quote.followUp) < 0 ? "Overdue" : "Pending";
+}
+
+function utilizationPercent(used, total) {
+  return Number(total) ? Math.min(100, Math.round((Number(used) / Number(total)) * 100)) : 0;
+}
+
+function handoffStatusRank(status) {
+  const ranks = {
+    Overdue: 0,
+    Delayed: 1,
+    Waiting: 2,
+    Pending: 3,
+    "In progress": 4,
+    Completed: 5
+  };
+  return ranks[status] ?? 6;
+}
+
+function handoffActionLabel(status) {
+  if (status === "Completed") return "Reopen";
+  if (status === "In progress") return "Complete";
+  return "Start";
+}
+
+function handoffDueText(dateString) {
+  const dueDays = daysUntil(dateString);
+  if (dueDays < 0) return `${Math.abs(dueDays)} days overdue`;
+  if (dueDays === 0) return "Due today";
+  return `${dueDays} days left`;
+}
+
+function stepStateLabel(state) {
+  const labels = {
+    done: "Done",
+    current: "Current",
+    blocked: "Needs action",
+    pending: "Left"
+  };
+  return labels[state] || state;
 }
 
 function partStatusLabel(part) {
@@ -881,7 +1841,7 @@ function exportData() {
 }
 
 function resetData() {
-  state = structuredClone(seedData);
+  state = migrateState(structuredClone(seedData));
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   setInitialDates();
   renderAll();

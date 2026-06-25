@@ -20,6 +20,7 @@
 
         <nav class="nav-list">
           <button class="nav-item active" data-target="home">Command Center</button>
+          <button class="nav-item" data-target="coordination">Department Coordination</button>
           <button class="nav-item" data-target="tickets">Service Tickets</button>
           <button class="nav-item" data-target="amc">AMC & Warranty</button>
           <button class="nav-item" data-target="inventory">Inventory Locator</button>
@@ -107,17 +108,17 @@
               <div class="panel-heading">
                 <div>
                   <p class="eyebrow">Workflow</p>
-                  <h4>Service process flow</h4>
+                  <h4>Service workflow</h4>
                 </div>
               </div>
-              <div class="flow-line">
-                <span>Portal</span>
-                <span>SAP/CRM</span>
-                <span>Ticket</span>
-                <span>AMC</span>
-                <span>Engineer</span>
-                <span>Stores</span>
-                <span>Power BI</span>
+              <div class="workflow-steps">
+                <span><strong>01</strong>Request</span>
+                <span><strong>02</strong>Ticket</span>
+                <span><strong>03</strong>AMC check</span>
+                <span><strong>04</strong>Engineer</span>
+                <span><strong>05</strong>Parts</span>
+                <span><strong>06</strong>Follow-up</span>
+                <span><strong>07</strong>Report</span>
               </div>
             </section>
 
@@ -141,6 +142,41 @@
               <div id="partsAttention" class="compact-list"></div>
             </section>
           </div>
+        </section>
+
+        <section id="coordination" class="page-section">
+          <div class="section-title">
+            <div>
+              <p class="eyebrow">Department coordination</p>
+              <h3>Handoff tracker</h3>
+            </div>
+            <span class="badge warning" id="handoffCount">0 active</span>
+          </div>
+
+          <section class="panel table-panel coordination-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Cross-team work queue</p>
+                <h4>Sales, service, stores and accounts actions</h4>
+              </div>
+            </div>
+            <div class="table-wrap tall">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Work item</th>
+                    <th>Current dept</th>
+                    <th>Owner</th>
+                    <th>Next action</th>
+                    <th>Status</th>
+                    <th>Due</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="coordinationRows"></tbody>
+              </table>
+            </div>
+          </section>
         </section>
 
         <section id="tickets" class="page-section">
@@ -539,5 +575,18 @@
         </section>
       </main>
     </div>
+
+    <dialog id="detailModal" class="detail-modal" aria-labelledby="detailModalTitle">
+      <div class="modal-card">
+        <div class="modal-heading">
+          <div>
+            <p class="eyebrow" id="detailModalMeta">Details</p>
+            <h3 id="detailModalTitle">Register details</h3>
+          </div>
+          <button id="detailModalClose" class="modal-close" type="button" aria-label="Close details">&times;</button>
+        </div>
+        <div id="detailModalBody" class="modal-body"></div>
+      </div>
+    </dialog>
   </body>
 </html>

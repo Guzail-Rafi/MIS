@@ -21,6 +21,7 @@
         <nav class="nav-list">
           <button class="nav-item active" data-target="home">Command Center</button>
           <button class="nav-item" data-target="coordination">Department Coordination</button>
+          <button class="nav-item" data-target="data-entry">Data Entry</button>
           <button class="nav-item" data-target="tickets">Service Tickets</button>
           <button class="nav-item" data-target="amc">AMC & Warranty</button>
           <button class="nav-item" data-target="inventory">Inventory Locator</button>
@@ -179,15 +180,15 @@
           </section>
         </section>
 
-        <section id="tickets" class="page-section">
+        <section id="data-entry" class="page-section">
           <div class="section-title">
             <div>
-              <p class="eyebrow">Service tickets</p>
-              <h3>Customer and internal service portal</h3>
+              <p class="eyebrow">Data entry</p>
+              <h3>Add and update operational records</h3>
             </div>
           </div>
 
-          <div class="form-grid">
+          <div class="data-entry-grid">
             <form id="ticketForm" class="panel form-panel">
               <div class="panel-heading">
                 <div>
@@ -267,48 +268,6 @@
               </div>
             </form>
 
-            <section class="panel table-panel">
-              <div class="panel-heading">
-                <div>
-                  <p class="eyebrow">Central record</p>
-                  <h4>Ticket register</h4>
-                </div>
-                <div class="filter-tabs" role="group" aria-label="Ticket status filter">
-                  <button class="filter-tab active" data-ticket-filter="all">All</button>
-                  <button class="filter-tab" data-ticket-filter="Open">Open</button>
-                  <button class="filter-tab" data-ticket-filter="Delayed">Delayed</button>
-                  <button class="filter-tab" data-ticket-filter="Completed">Completed</button>
-                </div>
-              </div>
-              <div class="table-wrap tall">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>ID</th>
-                      <th>Customer</th>
-                      <th>Issue</th>
-                      <th>Part</th>
-                      <th>Priority</th>
-                      <th>Status</th>
-                      <th>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody id="ticketRows"></tbody>
-                </table>
-              </div>
-            </section>
-          </div>
-        </section>
-
-        <section id="amc" class="page-section">
-          <div class="section-title">
-            <div>
-              <p class="eyebrow">AMC and warranty</p>
-              <h3>Contract entitlement tracking</h3>
-            </div>
-          </div>
-
-          <div class="form-grid compact-form-grid">
             <form id="amcForm" class="panel form-panel">
               <div class="panel-heading">
                 <div>
@@ -343,27 +302,6 @@
               <button type="submit" class="primary-button">Save AMC</button>
             </form>
 
-            <section class="panel table-panel">
-              <div class="panel-heading">
-                <div>
-                  <p class="eyebrow">Entitlement ledger</p>
-                  <h4>AMC utilization</h4>
-                </div>
-              </div>
-              <div id="amcCards" class="contract-grid"></div>
-            </section>
-          </div>
-        </section>
-
-        <section id="inventory" class="page-section">
-          <div class="section-title">
-            <div>
-              <p class="eyebrow">Inventory locator</p>
-              <h3>Spare parts and consumables visibility</h3>
-            </div>
-          </div>
-
-          <div class="form-grid">
             <form id="partForm" class="panel form-panel">
               <div class="panel-heading">
                 <div>
@@ -416,41 +354,6 @@
               <button type="submit" class="primary-button">Save Part</button>
             </form>
 
-            <section class="panel table-panel">
-              <div class="panel-heading">
-                <div>
-                  <p class="eyebrow">Digital location</p>
-                  <h4>Parts register</h4>
-                </div>
-              </div>
-              <div class="table-wrap tall">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Code</th>
-                      <th>Name</th>
-                      <th>Qty</th>
-                      <th>Location</th>
-                      <th>Lead time</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody id="partRows"></tbody>
-                </table>
-              </div>
-            </section>
-          </div>
-        </section>
-
-        <section id="quotes" class="page-section">
-          <div class="section-title">
-            <div>
-              <p class="eyebrow">Sales follow-up</p>
-              <h3>Quotation tracking</h3>
-            </div>
-          </div>
-
-          <div class="form-grid compact-form-grid">
             <form id="quoteForm" class="panel form-panel">
               <div class="panel-heading">
                 <div>
@@ -484,8 +387,110 @@
               </label>
               <button type="submit" class="primary-button">Save Quote</button>
             </form>
+          </div>
+        </section>
 
-            <section class="panel table-panel">
+        <section id="tickets" class="page-section">
+          <div class="section-title">
+            <div>
+              <p class="eyebrow">Service tickets</p>
+              <h3>Customer and internal service portal</h3>
+            </div>
+          </div>
+
+          <section class="panel table-panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Central record</p>
+                  <h4>Ticket register</h4>
+                </div>
+                <div class="filter-tabs" role="group" aria-label="Ticket status filter">
+                  <button class="filter-tab active" data-ticket-filter="all">All</button>
+                  <button class="filter-tab" data-ticket-filter="Open">Open</button>
+                  <button class="filter-tab" data-ticket-filter="Delayed">Delayed</button>
+                  <button class="filter-tab" data-ticket-filter="Completed">Completed</button>
+                </div>
+              </div>
+              <div class="table-wrap tall">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Customer</th>
+                      <th>Issue</th>
+                      <th>Part</th>
+                      <th>Priority</th>
+                      <th>Status</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="ticketRows"></tbody>
+                </table>
+              </div>
+          </section>
+        </section>
+
+        <section id="amc" class="page-section">
+          <div class="section-title">
+            <div>
+              <p class="eyebrow">AMC and warranty</p>
+              <h3>Contract entitlement tracking</h3>
+            </div>
+          </div>
+
+          <section class="panel table-panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Entitlement ledger</p>
+                  <h4>AMC utilization</h4>
+                </div>
+              </div>
+              <div id="amcCards" class="contract-grid"></div>
+          </section>
+        </section>
+
+        <section id="inventory" class="page-section">
+          <div class="section-title">
+            <div>
+              <p class="eyebrow">Inventory locator</p>
+              <h3>Spare parts and consumables visibility</h3>
+            </div>
+          </div>
+
+          <section class="panel table-panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Digital location</p>
+                  <h4>Parts register</h4>
+                </div>
+              </div>
+              <div class="table-wrap tall">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Code</th>
+                      <th>Name</th>
+                      <th>Qty</th>
+                      <th>Location</th>
+                      <th>Lead time</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="partRows"></tbody>
+                </table>
+              </div>
+          </section>
+        </section>
+
+        <section id="quotes" class="page-section">
+          <div class="section-title">
+            <div>
+              <p class="eyebrow">Sales follow-up</p>
+              <h3>Quotation tracking</h3>
+            </div>
+          </div>
+
+          <section class="panel table-panel">
               <div class="panel-heading">
                 <div>
                   <p class="eyebrow">Open sales work</p>
@@ -507,8 +512,7 @@
                   <tbody id="quoteRows"></tbody>
                 </table>
               </div>
-            </section>
-          </div>
+          </section>
         </section>
 
         <section id="machines" class="page-section">

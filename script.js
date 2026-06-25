@@ -1,5 +1,22 @@
 const STORAGE_KEY = "vinsak-smart-serviceconnect-mis-v1";
-const DATA_VERSION = 4;
+const DATA_VERSION = 5;
+
+const emailDirectory = {
+  "Arun Mehta": "arun.mehta@vinsak.com",
+  "Nikhil Rao": "nikhil.rao@vinsak.com",
+  "Sara Thomas": "sara.thomas@vinsak.com",
+  "Faisal Khan": "faisal.khan@vinsak.com",
+  "Accounts Team": "accounts@vinsak.com",
+  "Sales Team": "sales@vinsak.com",
+  "Stores Team": "stores@vinsak.com",
+  Service: "service@vinsak.com",
+  Stores: "stores@vinsak.com",
+  Accounts: "accounts@vinsak.com",
+  Sales: "sales@vinsak.com",
+  Management: "management@vinsak.com",
+  "Power BI": "management@vinsak.com",
+  Inventory: "stores@vinsak.com"
+};
 
 const today = new Date("2026-06-24T12:00:00+04:00");
 
@@ -415,6 +432,12 @@ function bindEvents() {
 
   els.detailModalClose.addEventListener("click", closeDetailModal);
   els.detailModal.addEventListener("click", (event) => {
+    const notifyButton = event.target.closest("[data-notify-step]");
+    if (notifyButton) {
+      sendPipelineStepNotification(notifyButton.dataset.handoffId, Number(notifyButton.dataset.notifyStep));
+      return;
+    }
+
     if (event.target === els.detailModal) closeDetailModal();
   });
 }
@@ -452,7 +475,6 @@ function migrateState(nextState) {
   if (!Array.isArray(nextState.handoffs)) {
     nextState.handoffs = [];
   }
-
   if (storedVersion < 2) {
     const primeLabelsTicket = nextState.tickets.find((ticket) => ticket.id === "TKT-1048");
     if (primeLabelsTicket && primeLabelsTicket.status === "Open") {
@@ -468,6 +490,12 @@ function migrateState(nextState) {
     });
   }
 
+  nextState.handoffs.forEach((handoff) => {
+    if (!Array.isArray(handoff.notifications)) {
+      handoff.notifications = [];
+    }
+  });
+
   nextState.dataVersion = DATA_VERSION;
   return nextState;
 }
@@ -481,8 +509,8 @@ function persistState(message = "Saved to prototype backend") {
     minute: "2-digit"
   });
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  els.syncStatus.textContent = message;
   renderAll();
+  els.syncStatus.textContent = message;
 }
 
 function renderAll() {
@@ -692,6 +720,7 @@ function renderCoordination() {
         .map((handoff) => {
           const dueDays = daysUntil(handoff.due);
           const dueText = dueDays < 0 ? `${Math.abs(dueDays)} days overdue` : dueDays === 0 ? "Due today" : `${dueDays} days left`;
+          const latestEmail = latestNotification(handoff);
           return `
             <tr class="handoff-row status-${className(handoff.status)}" data-handoff-id="${escapeHtml(handoff.id)}" tabindex="0" aria-label="View AI pipeline for ${escapeHtml(handoff.recordId)}">
               <td>
@@ -704,6 +733,11 @@ function renderCoordination() {
               <td>
                 ${escapeHtml(handoff.nextAction)}
                 <div class="handoff-note">${escapeHtml(handoff.note)}</div>
+                ${
+                  latestEmail
+                    ? `<div class="email-log-line">Last draft: ${escapeHtml(latestEmail.to)} - ${escapeHtml(notificationTime(latestEmail))}</div>`
+                    : ""
+                }
               </td>
               <td><span class="badge ${className(handoff.status)}">${escapeHtml(handoff.status)}</span></td>
               <td>
@@ -1190,7 +1224,14 @@ function renderHandoffPipeline(handoff, pipeline) {
                   <span class="step-state">${stepStateLabel(step.state)}</span>
                 </div>
                 <p>${escapeHtml(step.detail)}</p>
-                <small>${escapeHtml(step.owner)}</small>
+                <div class="step-footer">
+                  <small>${escapeHtml(step.owner)}</small>
+                  ${
+                    step.state === "done"
+                      ? ""
+                      : `<button class="row-button step-notify" data-handoff-id="${escapeHtml(handoff.id)}" data-notify-step="${index}">Draft email</button>`
+                  }
+                </div>
               </div>
             </article>
           `
@@ -1208,6 +1249,16 @@ function renderHandoffPipeline(handoff, pipeline) {
         ${renderPipelineMiniList(pipeline.left, "No remaining steps")}
       </section>
     </div>
+
+    <section class="notification-log">
+      <div class="panel-heading compact-heading">
+        <div>
+          <p class="eyebrow">Outlook draft log</p>
+          <h4>Email drafts created from this handoff</h4>
+        </div>
+      </div>
+      ${renderNotificationLog(handoff)}
+    </section>
   `;
 }
 
@@ -1215,6 +1266,156 @@ function renderPipelineMiniList(steps, emptyMessage) {
   return steps.length
     ? `<div class="pipeline-mini-list">${steps.map((step) => `<span>${escapeHtml(step.title)}</span>`).join("")}</div>`
     : `<div class="empty-detail">${escapeHtml(emptyMessage)}</div>`;
+}
+
+function sendPipelineStepNotification(handoffId, stepIndex) {
+  const handoff = state.handoffs.find((item) => item.id === handoffId);
+  if (!handoff) return;
+
+  const pipeline = buildHandoffPipeline(handoff);
+  const step = pipeline.steps[stepIndex];
+  if (!step) return;
+
+  const notification = sendHandoffNotification(handoff, step, "Pipeline step action");
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  renderCoordination();
+  renderReports();
+  els.syncStatus.textContent = `Outlook draft opened for ${notification.to}`;
+  els.detailModalBody.innerHTML = renderHandoffPipeline(handoff, buildHandoffPipeline(handoff));
+  openEmailDraft(notification);
+}
+
+function sendHandoffNotification(handoff, step, trigger) {
+  if (!Array.isArray(handoff.notifications)) {
+    handoff.notifications = [];
+  }
+
+  const recipient = notificationRecipient(handoff, step);
+  const notification = {
+    id: nextId("EML", handoff.notifications),
+    trigger,
+    to: recipient.email,
+    recipient: recipient.label,
+    subject: `${handoff.recordId}: ${step ? step.title : handoff.nextAction}`,
+    body: notificationBody(handoff, step, recipient.label),
+    draftedAt: notificationTimestamp()
+  };
+
+  handoff.notifications.push(notification);
+  return notification;
+}
+
+function notificationRecipient(handoff, step) {
+  const title = String(step?.title || "").toLowerCase();
+  const owner = String(step?.owner || handoff.owner || handoff.department || "");
+
+  if (title.includes("customer")) {
+    return { label: handoff.customer, email: customerEmail(handoff.customer) };
+  }
+
+  const normalizedOwner = owner.split("/")[0].trim();
+  if (emailDirectory[normalizedOwner]) {
+    return { label: normalizedOwner, email: emailDirectory[normalizedOwner] };
+  }
+
+  if (emailDirectory[owner]) {
+    return { label: owner, email: emailDirectory[owner] };
+  }
+
+  const lowerOwner = owner.toLowerCase();
+  if (lowerOwner.includes("stores") || lowerOwner.includes("inventory")) {
+    return { label: "Stores Team", email: emailDirectory["Stores Team"] };
+  }
+  if (lowerOwner.includes("accounts") || lowerOwner.includes("amc")) {
+    return { label: "Accounts Team", email: emailDirectory["Accounts Team"] };
+  }
+  if (lowerOwner.includes("sales") || lowerOwner.includes("quotation")) {
+    return { label: "Sales Team", email: emailDirectory["Sales Team"] };
+  }
+  if (lowerOwner.includes("management") || lowerOwner.includes("power bi")) {
+    return { label: "Management", email: emailDirectory.Management };
+  }
+
+  return { label: handoff.department, email: emailDirectory[handoff.department] || "operations@vinsak.com" };
+}
+
+function notificationBody(handoff, step, recipientLabel) {
+  const action = step ? step.detail : handoff.nextAction;
+  return [
+    `Hello ${recipientLabel},`,
+    "",
+    `AI Coordination has flagged ${handoff.recordId} for ${handoff.customer}.`,
+    `Current status: ${handoff.status}.`,
+    `Required action: ${action}.`,
+    `Due date: ${formatDate(handoff.due)} (${handoffDueText(handoff.due)}).`,
+    "",
+    `Linked record: ${handoff.linkedTo}.`,
+    `Coordinator note: ${handoff.note}`,
+    "",
+    "Please update the handoff tracker after the action is completed."
+  ].join("\n");
+}
+
+function renderNotificationLog(handoff) {
+  const notifications = Array.isArray(handoff.notifications) ? [...handoff.notifications].reverse() : [];
+
+  if (!notifications.length) {
+    return `<div class="empty-detail">No email drafts created yet. Use a step's Draft email button or Start the handoff.</div>`;
+  }
+
+  return `
+    <div class="notification-list">
+      ${notifications
+        .map(
+          (notification) => `
+            <article class="notification-item">
+              <div>
+                <strong>${escapeHtml(notification.subject)}</strong>
+                <span>Draft to ${escapeHtml(notification.recipient)} &lt;${escapeHtml(notification.to)}&gt; - ${escapeHtml(notificationTime(notification))}</span>
+              </div>
+              <pre>${escapeHtml(notification.body)}</pre>
+            </article>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function latestNotification(handoff) {
+  if (!Array.isArray(handoff.notifications) || !handoff.notifications.length) return null;
+  return handoff.notifications.at(-1);
+}
+
+function openEmailDraft(notification) {
+  const link = document.createElement("a");
+  link.href = `mailto:${notification.to}?subject=${encodeURIComponent(notification.subject)}&body=${encodeURIComponent(notification.body)}`;
+  link.style.display = "none";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
+function notificationTime(notification) {
+  return notification.draftedAt || notification.sentAt || "Drafted";
+}
+
+function customerEmail(customer) {
+  const slug = String(customer || "customer")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ".")
+    .replace(/^\.+|\.+$/g, "");
+  return `${slug || "customer"}@customer.example`;
+}
+
+function notificationTimestamp() {
+  return new Date().toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
 }
 
 function openAmcDetails(amcId) {
@@ -1684,7 +1885,9 @@ function advanceHandoff(handoffId) {
     handoff.status = "In progress";
   }
 
-  persistState(`Handoff ${handoff.id} moved to ${handoff.status}`);
+  const notification = sendHandoffNotification(handoff, null, handoff.status === "Completed" ? "Completion update" : "Coordinator action");
+  persistState(`Handoff ${handoff.id} moved to ${handoff.status}. Outlook draft opened for ${notification.to}`);
+  openEmailDraft(notification);
 }
 
 function addHandoff(handoff) {

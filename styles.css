@@ -219,8 +219,24 @@ button {
 }
 
 .page-section {
-  scroll-margin-top: 92px;
+  display: none;
   margin-bottom: 30px;
+}
+
+.page-section.active {
+  display: block;
+  animation: pageFade 160ms ease;
+}
+
+@keyframes pageFade {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .section-title {
@@ -454,7 +470,7 @@ button {
 
 table {
   width: 100%;
-  min-width: 760px;
+  min-width: 900px;
   border-collapse: collapse;
 }
 
@@ -560,6 +576,21 @@ tbody tr.status-Inprogress td:first-child {
   background: var(--surface-soft);
 }
 
+.compact-item.action-item {
+  width: 100%;
+  color: var(--ink);
+  text-align: left;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.compact-item.action-item:hover,
+.compact-item.action-item:focus-visible {
+  border-color: rgba(15, 118, 110, 0.28);
+  box-shadow: 0 10px 24px rgba(58, 50, 39, 0.1);
+  outline: none;
+  transform: translateY(-1px);
+}
+
 .alert-item strong,
 .compact-item strong {
   display: block;
@@ -597,6 +628,103 @@ tbody tr.status-Inprogress td:first-child {
   color: var(--teal);
   font-size: 0.72rem;
   letter-spacing: 0;
+}
+
+.workflow-mini {
+  display: grid;
+  gap: 6px;
+  min-width: 150px;
+}
+
+.workflow-mini small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.workflow-current {
+  width: fit-content;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--ink);
+  font-size: 0.72rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.workflow-current.done,
+.workflow-dot.done {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.workflow-current.current,
+.workflow-dot.current {
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+
+.workflow-current.blocked,
+.workflow-dot.blocked {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.workflow-current.pending,
+.workflow-dot.pending {
+  background: var(--gold-soft);
+  color: var(--gold);
+}
+
+.workflow-dots {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(10px, 1fr));
+  gap: 3px;
+  max-width: 150px;
+}
+
+.workflow-dot {
+  height: 7px;
+  border-radius: 999px;
+  background: #e9e1d5;
+}
+
+.vendor-request-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.vendor-request-form {
+  display: grid;
+  gap: 12px;
+}
+
+.vendor-request-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.vendor-request-context span {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.vendor-request-context strong {
+  color: var(--ink);
 }
 
 .dept-pill {

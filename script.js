@@ -18,7 +18,25 @@ const emailDirectory = {
   Inventory: "stores@vinsak.com"
 };
 
+const partVendors = {
+  "SNS-TEN-09": { name: "Tension Controls Supplier", email: "orders@tension-controls.example" },
+  "PHD-CLN-22": { name: "Digital Inkjet Spares", email: "sales@digital-inkjet-spares.example" },
+  "FLT-UV-12": { name: "UV Consumables Gulf", email: "orders@uv-consumables.example" },
+  "BLA-SLT-18": { name: "Precision Blade Trading", email: "procurement@precision-blades.example" },
+  default: { name: "Approved Parts Vendor", email: "parts.vendor@example.com" }
+};
+
 const today = new Date("2026-06-24T12:00:00+04:00");
+
+const SERVICE_WORKFLOW = [
+  { id: "request", label: "Request", owner: "Portal / CRM" },
+  { id: "ticket", label: "Ticket", owner: "Service" },
+  { id: "amc", label: "AMC check", owner: "Accounts" },
+  { id: "engineer", label: "Engineer", owner: "Service" },
+  { id: "parts", label: "Parts", owner: "Stores" },
+  { id: "followup", label: "Follow-up", owner: "Coordinator" },
+  { id: "report", label: "Report", owner: "Power BI" }
+];
 
 const seedData = {
   tickets: [
@@ -315,6 +333,7 @@ document.addEventListener("DOMContentLoaded", () => {
   bindEvents();
   setInitialDates();
   renderAll();
+  showPage(currentPageFromHash(), false);
 });
 
 function bindElements() {
@@ -356,10 +375,12 @@ function bindElements() {
 function bindEvents() {
   document.querySelectorAll(".nav-item").forEach((button) => {
     button.addEventListener("click", () => {
-      document.querySelectorAll(".nav-item").forEach((item) => item.classList.remove("active"));
-      button.classList.add("active");
-      document.getElementById(button.dataset.target).scrollIntoView({ behavior: "smooth", block: "start" });
+      showPage(button.dataset.target);
     });
+  });
+
+  window.addEventListener("popstate", () => {
+    showPage(currentPageFromHash(), false);
   });
 
   document.querySelectorAll("[data-ticket-filter]").forEach((button) => {
@@ -411,6 +432,12 @@ function bindEvents() {
     openAmcDetails(card.dataset.amcId);
   });
 
+  els.partsAttention.addEventListener("click", (event) => {
+    const partButton = event.target.closest("[data-request-part]");
+    if (!partButton) return;
+    openPartVendorRequest(partButton.dataset.requestPart);
+  });
+
   els.coordinationRows.addEventListener("click", (event) => {
     const button = event.target.closest("[data-advance-handoff]");
     if (button) {
@@ -440,6 +467,40 @@ function bindEvents() {
 
     if (event.target === els.detailModal) closeDetailModal();
   });
+
+  els.detailModal.addEventListener("submit", (event) => {
+    const form = event.target.closest("[data-vendor-request-form]");
+    if (!form) return;
+
+    event.preventDefault();
+    draftVendorPartEmail(form.dataset.partCode, Number(form.elements.quantity.value), form.elements.vendor.value);
+  });
+}
+
+function showPage(pageId, updateHash = true) {
+  const nextPage = document.getElementById(pageId)?.classList.contains("page-section") ? pageId : "home";
+
+  document.querySelectorAll(".page-section").forEach((section) => {
+    section.classList.toggle("active", section.id === nextPage);
+  });
+
+  document.querySelectorAll(".nav-item").forEach((button) => {
+    button.classList.toggle("active", button.dataset.target === nextPage);
+  });
+
+  const mainContent = document.querySelector(".main-content");
+  if (mainContent) {
+    mainContent.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  window.scrollTo({ top: 0, behavior: "smooth" });
+
+  if (updateHash && window.location.hash !== `#${nextPage}`) {
+    window.history.pushState(null, "", `#${nextPage}`);
+  }
+}
+
+function currentPageFromHash() {
+  return window.location.hash ? window.location.hash.slice(1) : "home";
 }
 
 function setInitialDates() {
@@ -588,26 +649,30 @@ function renderHomeTickets() {
   els.homeTicketRows.innerHTML = rows.length
     ? rows
         .map(
-          (ticket) => `
-            <tr class="ticket-row status-${className(ticket.status)}">
-              <td class="id-cell">
-                ${ticket.id}
-                <div><span class="badge mini-status ${ticket.status}">${ticket.status}</span></div>
-              </td>
-              <td>${escapeHtml(ticket.customer)}</td>
-              <td>
-                ${escapeHtml(ticket.machine)}
-                <div class="small-muted">${escapeHtml(ticket.serial)}</div>
-              </td>
-              <td><span class="badge ${className(ticket.amc)}">${escapeHtml(ticket.amc)}</span></td>
-              <td><span class="badge ${ticket.priority}">${ticket.priority}</span></td>
-              <td><span class="badge ${ticket.status}">${ticket.status}</span></td>
-              <td>${escapeHtml(ticket.engineer)}</td>
-            </tr>
-          `
+          (ticket) => {
+            const workflow = ticketWorkflowSummary(ticket);
+            return `
+              <tr class="ticket-row status-${className(ticket.status)}">
+                <td class="id-cell">
+                  ${ticket.id}
+                  <div><span class="badge mini-status ${ticket.status}">${ticket.status}</span></div>
+                </td>
+                <td>${escapeHtml(ticket.customer)}</td>
+                <td>
+                  ${escapeHtml(ticket.machine)}
+                  <div class="small-muted">${escapeHtml(ticket.serial)}</div>
+                </td>
+                <td><span class="badge ${className(ticket.amc)}">${escapeHtml(ticket.amc)}</span></td>
+                <td><span class="badge ${ticket.priority}">${ticket.priority}</span></td>
+                <td><span class="badge ${ticket.status}">${ticket.status}</span></td>
+                <td>${renderWorkflowMini(workflow)}</td>
+                <td>${escapeHtml(ticket.engineer)}</td>
+              </tr>
+            `;
+          }
         )
         .join("")
-    : emptyRow(7, "No matching active tickets");
+    : emptyRow(8, "No matching active tickets");
 }
 
 function renderTickets() {
@@ -616,34 +681,63 @@ function renderTickets() {
   els.ticketRows.innerHTML = rows.length
     ? rows
         .map(
-          (ticket) => `
-            <tr class="ticket-row status-${className(ticket.status)}">
-              <td class="id-cell">${ticket.id}</td>
-              <td>
-                ${escapeHtml(ticket.customer)}
-                <div class="small-muted">${escapeHtml(ticket.source)}</div>
-              </td>
-              <td>
-                ${escapeHtml(ticket.type)}
-                <div class="small-muted">${escapeHtml(ticket.issue)}</div>
-              </td>
-              <td>${escapeHtml(ticket.part)}</td>
-              <td><span class="badge ${ticket.priority}">${ticket.priority}</span></td>
-              <td><span class="badge ${ticket.status}">${ticket.status}</span></td>
-              <td>
-                <button class="row-button" data-complete-ticket="${ticket.id}">
-                  ${ticket.status === "Completed" ? "Reopen" : "Complete"}
-                </button>
-              </td>
-            </tr>
-          `
+          (ticket) => {
+            const workflow = ticketWorkflowSummary(ticket);
+            return `
+              <tr class="ticket-row status-${className(ticket.status)}">
+                <td class="id-cell">${ticket.id}</td>
+                <td>
+                  ${escapeHtml(ticket.customer)}
+                  <div class="small-muted">${escapeHtml(ticket.source)}</div>
+                </td>
+                <td>
+                  ${escapeHtml(ticket.type)}
+                  <div class="small-muted">${escapeHtml(ticket.issue)}</div>
+                </td>
+                <td>${escapeHtml(ticket.part)}</td>
+                <td><span class="badge ${ticket.priority}">${ticket.priority}</span></td>
+                <td><span class="badge ${ticket.status}">${ticket.status}</span></td>
+                <td>${renderWorkflowMini(workflow)}</td>
+                <td>
+                  <button class="row-button" data-complete-ticket="${ticket.id}">
+                    ${ticket.status === "Completed" ? "Reopen" : "Complete"}
+                  </button>
+                </td>
+              </tr>
+            `;
+          }
         )
         .join("")
-    : emptyRow(7, "No matching tickets");
+    : emptyRow(8, "No matching tickets");
 
   document.querySelectorAll("[data-complete-ticket]").forEach((button) => {
     button.addEventListener("click", () => toggleTicketStatus(button.dataset.completeTicket));
   });
+}
+
+function ticketWorkflowSummary(ticket) {
+  const steps = serviceWorkflowSteps(ticket);
+  const doneCount = steps.filter((step) => step.state === "done").length;
+  const currentStep = steps.find((step) => step.state !== "done") || steps[steps.length - 1];
+  return {
+    currentStep,
+    steps,
+    progress: Math.round((doneCount / steps.length) * 100)
+  };
+}
+
+function renderWorkflowMini(workflow) {
+  return `
+    <div class="workflow-mini" aria-label="Workflow progress: ${workflow.progress}%">
+      <span class="workflow-current ${workflow.currentStep.state}">
+        ${workflow.currentStep.number} ${escapeHtml(workflow.currentStep.title)}
+      </span>
+      <div class="workflow-dots" aria-hidden="true">
+        ${workflow.steps.map((step) => `<span class="workflow-dot ${step.state}"></span>`).join("")}
+      </div>
+      <small>${workflow.progress}% complete</small>
+    </div>
+  `;
 }
 
 function renderAlerts() {
@@ -786,13 +880,13 @@ function renderPartsAttention() {
     ? parts
         .map(
           (part) => `
-            <div class="compact-item">
+            <button class="compact-item action-item" type="button" data-request-part="${escapeHtml(part.code)}" aria-label="Request ${escapeHtml(part.code)} from vendor">
               <div>
                 <strong>${escapeHtml(part.code)}</strong>
                 <span>${escapeHtml(part.name)} - ${locationText(part)}</span>
               </div>
               <span class="badge ${partStatus(part)}">${partStatusLabel(part)}</span>
-            </div>
+            </button>
           `
         )
         .join("")
@@ -818,6 +912,169 @@ function renderParts() {
         )
         .join("")
     : emptyRow(6, "No matching spare parts");
+}
+
+function openPartVendorRequest(partCode) {
+  const part = state.parts.find((item) => item.code === partCode);
+  if (!part) return;
+
+  const vendor = partVendor(part.code);
+  const suggestedQuantity = suggestedReorderQuantity(part);
+  const linkedTickets = state.tickets.filter((ticket) => ticket.part === part.code && ticket.status !== "Completed");
+
+  els.detailModalTitle.textContent = `${part.code} vendor request`;
+  els.detailModalMeta.textContent = "Stores - parts requiring attention";
+  els.detailModalBody.innerHTML = `
+    <div class="detail-summary-grid">
+      <div class="detail-summary-item">
+        <span>Current stock</span>
+        <strong>${Number(part.qty)}</strong>
+        <small>Minimum ${Number(part.min)}</small>
+      </div>
+      <div class="detail-summary-item">
+        <span>Status</span>
+        <strong>${partStatusLabel(part)}</strong>
+      </div>
+      <div class="detail-summary-item">
+        <span>Lead time</span>
+        <strong>${Number(part.leadTime)} days</strong>
+      </div>
+      <div class="detail-summary-item">
+        <span>Location</span>
+        <strong>${locationText(part)}</strong>
+      </div>
+    </div>
+
+    <section class="detail-block vendor-request-panel">
+      <div class="panel-heading compact-heading">
+        <div>
+          <p class="eyebrow">Vendor request</p>
+          <h4>${escapeHtml(part.name)}</h4>
+        </div>
+        <span class="badge ${partStatus(part)}">${partStatusLabel(part)}</span>
+      </div>
+
+      <form class="vendor-request-form" data-vendor-request-form data-part-code="${escapeHtml(part.code)}">
+        <div class="form-row two-col">
+          <label>
+            Quantity
+            <input name="quantity" type="number" min="1" step="1" value="${suggestedQuantity}" required />
+          </label>
+          <label>
+            Vendor
+            <select name="vendor">
+              ${renderVendorOptions(vendor.email)}
+            </select>
+          </label>
+        </div>
+        <div class="vendor-request-context">
+          <span>Part code <strong>${escapeHtml(part.code)}</strong></span>
+          <span>Linked demand <strong>${linkedTickets.length} active ticket${linkedTickets.length === 1 ? "" : "s"}</strong></span>
+          <span>Suggested request <strong>${suggestedQuantity} pcs</strong></span>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="primary-button">Draft Vendor Email</button>
+          <span class="form-hint">Opens as an Outlook draft using your default mail app.</span>
+        </div>
+      </form>
+    </section>
+  `;
+
+  if (typeof els.detailModal.showModal === "function") {
+    els.detailModal.showModal();
+  } else {
+    els.detailModal.setAttribute("open", "");
+  }
+}
+
+function renderVendorOptions(selectedEmail) {
+  return Object.values(partVendors)
+    .map(
+      (vendor) => `
+        <option value="${escapeHtml(vendor.email)}" ${vendor.email === selectedEmail ? "selected" : ""}>
+          ${escapeHtml(vendor.name)} - ${escapeHtml(vendor.email)}
+        </option>
+      `
+    )
+    .join("");
+}
+
+function draftVendorPartEmail(partCode, quantity, vendorEmail) {
+  const part = state.parts.find((item) => item.code === partCode);
+  if (!part || !Number.isFinite(quantity) || quantity <= 0) return;
+
+  const vendor = partVendor(part.code, vendorEmail);
+  const notification = {
+    to: vendor.email,
+    recipient: vendor.name,
+    subject: `Parts request: ${quantity} x ${part.code} - ${part.name}`,
+    body: vendorPartEmailBody(part, quantity, vendor),
+    draftedAt: notificationTimestamp()
+  };
+
+  els.syncStatus.textContent = `Vendor draft opened for ${part.code}`;
+  els.detailModalBody.innerHTML = `
+    <section class="notification-log">
+      <div class="panel-heading compact-heading">
+        <div>
+          <p class="eyebrow">Outlook draft ready</p>
+          <h4>${quantity} x ${escapeHtml(part.code)} requested from ${escapeHtml(vendor.name)}</h4>
+        </div>
+      </div>
+      <div class="notification-list">
+        <article class="notification-item">
+          <div>
+            <strong>${escapeHtml(notification.subject)}</strong>
+            <span>Draft to ${escapeHtml(vendor.name)} &lt;${escapeHtml(vendor.email)}&gt;</span>
+          </div>
+          <pre>${escapeHtml(notification.body)}</pre>
+        </article>
+      </div>
+    </section>
+  `;
+  openEmailDraft(notification);
+}
+
+function vendorPartEmailBody(part, quantity, vendor) {
+  const linkedTickets = state.tickets.filter((ticket) => ticket.part === part.code && ticket.status !== "Completed");
+  const ticketLines = linkedTickets.length
+    ? linkedTickets.map((ticket) => `- ${ticket.id}: ${ticket.customer}, ${ticket.machine}, ${ticket.status}`).join("\n")
+    : "- No active ticket linked; request is based on stock threshold.";
+
+  return `Dear ${vendor.name},
+
+Please arrange availability and pricing for the following spare part:
+
+Part code: ${part.code}
+Part name: ${part.name}
+Requested quantity: ${quantity}
+Current stock: ${part.qty}
+Minimum stock level: ${part.min}
+Store location: ${part.warehouse} / Rack ${part.rack} / Shelf ${part.shelf} / Bin ${part.bin}
+Expected lead time in system: ${part.leadTime} days
+
+Linked service demand:
+${ticketLines}
+
+Please confirm price, delivery timeline, and availability.
+
+Regards,
+Stores Team
+VINSAK`;
+}
+
+function partVendor(partCode, selectedEmail = null) {
+  const vendors = Object.values(partVendors);
+  if (selectedEmail) {
+    return vendors.find((vendor) => vendor.email === selectedEmail) || partVendors.default;
+  }
+  return partVendors[partCode] || partVendors.default;
+}
+
+function suggestedReorderQuantity(part) {
+  const shortage = Math.max(0, Number(part.min) - Number(part.qty));
+  const activeDemand = state.tickets.filter((ticket) => ticket.part === part.code && ticket.status !== "Completed").length;
+  return Math.max(shortage + activeDemand + 1, Number(part.min), 1);
 }
 
 function renderAmcs() {
@@ -972,60 +1229,78 @@ function buildHandoffPipeline(handoff) {
   };
 }
 
-function ticketPipelineSteps(handoff, context, currentLabel) {
-  const ticket = context.ticket;
-  const amc = context.amc;
-  const part = context.part;
+function serviceWorkflowSteps(ticket, handoff = null, currentLabel = null, suppliedContext = {}) {
+  const amc =
+    suppliedContext.amc ||
+    (ticket ? state.amcs.find((item) => item.serial === ticket.serial || item.customer === ticket.customer) : null);
+  const part = suppliedContext.part || (ticket ? state.parts.find((item) => item.code === ticket.part) : null);
+  const followUpState = ticket?.status === "Completed" ? "done" : currentLabel || (ticket?.status === "Delayed" ? "blocked" : "current");
+  const amcDecisionKnown = Boolean(amc || ticket?.amc === "Warranty" || ticket?.amc === "Chargeable");
+  const partAvailable = part && Number(part.qty) > 0;
+
   return [
     {
-      title: "Request captured",
-      owner: "Portal / CRM",
-      detail: ticket ? `${ticket.source} request for ${ticket.customer}` : "Ticket source loaded",
-      state: "done"
+      ...SERVICE_WORKFLOW[0],
+      number: "01",
+      title: "Request",
+      detail: ticket ? `${ticket.source} request captured for ${ticket.customer}` : "Customer request captured",
+      state: ticket ? "done" : "pending"
     },
     {
-      title: "Ticket registered",
-      owner: "Service",
-      detail: ticket ? `${ticket.priority} priority, ${ticket.status} status` : "Ticket register linked",
-      state: "done"
+      ...SERVICE_WORKFLOW[1],
+      number: "02",
+      title: "Ticket",
+      detail: ticket ? `${ticket.id}: ${ticket.priority} priority, ${ticket.status} status` : "Service ticket registration pending",
+      state: ticket?.id ? "done" : "pending"
     },
     {
-      title: "AMC entitlement checked",
-      owner: "Accounts",
-      detail: amc ? `${amc.hoursLeft}/${amc.hoursTotal} hours and ${amc.visitsLeft}/${amc.visitsTotal} visits left` : "No matching AMC found",
-      state: amc ? "done" : "blocked"
+      ...SERVICE_WORKFLOW[2],
+      number: "03",
+      title: "AMC check",
+      detail: amc
+        ? `${amc.hoursLeft}/${amc.hoursTotal} hours and ${amc.visitsLeft}/${amc.visitsTotal} visits left`
+        : ticket
+        ? `${ticket.amc} service classification recorded`
+        : "AMC entitlement check pending",
+      state: amcDecisionKnown ? "done" : "blocked"
     },
     {
-      title: "Part availability checked",
-      owner: "Stores",
-      detail: part ? `${part.code}: ${partStatusLabel(part)}, qty ${part.qty}, min ${part.min}` : "No part requirement linked",
-      state: part ? (partStatus(part) === "InStock" ? "done" : "blocked") : "pending"
+      ...SERVICE_WORKFLOW[3],
+      number: "04",
+      title: "Engineer",
+      detail: ticket?.engineer ? `${ticket.engineer} assigned to ${ticket.machine}` : "Engineer assignment pending",
+      state: ticket?.engineer ? "done" : "pending"
     },
     {
-      title: "Engineer assigned",
-      owner: ticket ? ticket.engineer : handoff.owner,
-      detail: ticket ? `${ticket.engineer} assigned to ${ticket.machine}` : `${handoff.owner} assigned`,
-      state: "done"
+      ...SERVICE_WORKFLOW[4],
+      number: "05",
+      title: "Parts",
+      detail: part
+        ? `${part.code}: ${partStatusLabel(part)}, qty ${part.qty}, min ${part.min}`
+        : ticket?.part
+        ? `${ticket.part} needs stores confirmation`
+        : "No part requirement linked",
+      state: part ? (partAvailable ? "done" : "blocked") : ticket?.part ? "pending" : "done"
     },
     {
-      title: "Department handoff action",
-      owner: handoff.department,
-      detail: handoff.nextAction,
-      state: currentLabel
+      ...SERVICE_WORKFLOW[5],
+      number: "06",
+      title: "Follow-up",
+      detail: handoff?.nextAction || (ticket?.status === "Delayed" ? "Coordinator must confirm revised SLA" : "Customer update and closure follow-up"),
+      state: followUpState
     },
     {
-      title: "Customer update and closure",
-      owner: "Service / Management",
-      detail: "Confirm outcome, billing impact and customer communication",
-      state: "pending"
-    },
-    {
-      title: "Machine history and report updated",
-      owner: "Power BI",
-      detail: "Update service history, AMC utilization and management report",
-      state: ticket && ticket.status === "Completed" ? "done" : "pending"
+      ...SERVICE_WORKFLOW[6],
+      number: "07",
+      title: "Report",
+      detail: "Update machine history, AMC utilization and management report",
+      state: ticket?.status === "Completed" ? "done" : "pending"
     }
   ];
+}
+
+function ticketPipelineSteps(handoff, context, currentLabel) {
+  return serviceWorkflowSteps(context.ticket, handoff, currentLabel, context);
 }
 
 function amcPipelineSteps(handoff, context, currentLabel) {

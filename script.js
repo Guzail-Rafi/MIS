@@ -1,5 +1,5 @@
 const STORAGE_KEY = "vinsak-smart-serviceconnect-mis-v1";
-const DATA_VERSION = 5;
+const DATA_VERSION = 8;
 
 const emailDirectory = {
   "Arun Mehta": "arun.mehta@vinsak.com",
@@ -318,11 +318,41 @@ const seedData = {
       note: "Part is below minimum stock level."
     }
   ],
+  supplierPlans: [
+    {
+      partCode: "SNS-TEN-09",
+      requestedQty: 3,
+      vendor: "orders@tension-controls.example",
+      eta: "",
+      confirmedQty: 0,
+      status: "Awaiting vendor reply",
+      updatedAt: ""
+    },
+    {
+      partCode: "PHD-CLN-22",
+      requestedQty: 1,
+      vendor: "sales@digital-inkjet-spares.example",
+      eta: "",
+      confirmedQty: 0,
+      status: "Awaiting vendor reply",
+      updatedAt: ""
+    },
+    {
+      partCode: "BLA-SLT-18",
+      requestedQty: 4,
+      vendor: "procurement@precision-blades.example",
+      eta: "2026-07-12",
+      confirmedQty: 4,
+      status: "Vendor confirmed",
+      updatedAt: "2026-06-24 18:00 GST"
+    }
+  ],
   lastSync: "2026-06-24 18:00 GST"
 };
 
 let state = loadState();
 let ticketFilter = "all";
+let handoffDeptFilter = "all";
 let searchTerm = "";
 let pipelineTimer = null;
 
@@ -348,9 +378,11 @@ function bindElements() {
     "coordinationRows",
     "ticketRows",
     "engineerSelect",
+    "engineerSuggestion",
     "partSelect",
     "amcCards",
     "partRows",
+    "supplierLeadRows",
     "quoteRows",
     "machineCards",
     "statusDonut",
@@ -392,6 +424,15 @@ function bindEvents() {
     });
   });
 
+  document.querySelectorAll("[data-handoff-dept-filter]").forEach((button) => {
+    button.addEventListener("click", () => {
+      handoffDeptFilter = button.dataset.handoffDeptFilter;
+      document.querySelectorAll("[data-handoff-dept-filter]").forEach((item) => item.classList.remove("active"));
+      button.classList.add("active");
+      renderCoordination();
+    });
+  });
+
   els.globalSearch.addEventListener("input", (event) => {
     searchTerm = event.target.value.trim().toLowerCase();
     renderTables();
@@ -400,6 +441,8 @@ function bindEvents() {
   });
 
   document.getElementById("ticketForm").addEventListener("submit", saveTicket);
+  document.getElementById("ticketForm").addEventListener("input", updateEngineerSuggestion);
+  document.getElementById("ticketForm").addEventListener("change", updateEngineerSuggestion);
   document.getElementById("partForm").addEventListener("submit", savePart);
   document.getElementById("amcForm").addEventListener("submit", saveAmc);
   document.getElementById("quoteForm").addEventListener("submit", saveQuote);
@@ -432,10 +475,35 @@ function bindEvents() {
     openAmcDetails(card.dataset.amcId);
   });
 
+  els.machineCards.addEventListener("click", (event) => {
+    const card = event.target.closest("[data-machine-serial]");
+    if (!card) return;
+    openMachineDetails(card.dataset.machineSerial);
+  });
+
+  els.machineCards.addEventListener("keydown", (event) => {
+    const card = event.target.closest("[data-machine-serial]");
+    if (!card || (event.key !== "Enter" && event.key !== " ")) return;
+    event.preventDefault();
+    openMachineDetails(card.dataset.machineSerial);
+  });
+
+  els.engineerBars.addEventListener("click", (event) => {
+    const engineerButton = event.target.closest("[data-engineer-name]");
+    if (!engineerButton) return;
+    openEngineerDetails(engineerButton.dataset.engineerName);
+  });
+
   els.partsAttention.addEventListener("click", (event) => {
     const partButton = event.target.closest("[data-request-part]");
     if (!partButton) return;
     openPartVendorRequest(partButton.dataset.requestPart);
+  });
+
+  els.supplierLeadRows.addEventListener("click", (event) => {
+    const partButton = event.target.closest("[data-update-leadtime]");
+    if (!partButton) return;
+    openPartVendorRequest(partButton.dataset.updateLeadtime);
   });
 
   els.coordinationRows.addEventListener("click", (event) => {
@@ -474,6 +542,27 @@ function bindEvents() {
 
     event.preventDefault();
     draftVendorPartEmail(form.dataset.partCode, Number(form.elements.quantity.value), form.elements.vendor.value);
+  });
+
+  els.detailModal.addEventListener("submit", (event) => {
+    const form = event.target.closest("[data-leadtime-reply-form]");
+    if (!form) return;
+
+    event.preventDefault();
+    saveSupplierLeadTimeReply(
+      form.dataset.partCode,
+      form.elements.eta.value,
+      Number(form.elements.confirmedQty.value),
+      form.elements.vendor.value
+    );
+  });
+
+  els.detailModal.addEventListener("submit", (event) => {
+    const form = event.target.closest("[data-handoff-update-form]");
+    if (!form) return;
+
+    event.preventDefault();
+    submitHandoffUpdate(form.dataset.handoffId, form.elements.updateText.value, form.elements.nextStatus.value);
   });
 }
 
@@ -536,6 +625,9 @@ function migrateState(nextState) {
   if (!Array.isArray(nextState.handoffs)) {
     nextState.handoffs = [];
   }
+  if (!Array.isArray(nextState.supplierPlans)) {
+    nextState.supplierPlans = structuredClone(seedData.supplierPlans);
+  }
   if (storedVersion < 2) {
     const primeLabelsTicket = nextState.tickets.find((ticket) => ticket.id === "TKT-1048");
     if (primeLabelsTicket && primeLabelsTicket.status === "Open") {
@@ -551,9 +643,30 @@ function migrateState(nextState) {
     });
   }
 
+  if (storedVersion < 7) {
+    resetSupplierPlanToAwaiting(nextState, "PHD-CLN-22");
+  }
+
   nextState.handoffs.forEach((handoff) => {
     if (!Array.isArray(handoff.notifications)) {
       handoff.notifications = [];
+    }
+    if (!Array.isArray(handoff.updates)) {
+      handoff.updates = [
+        {
+          id: "UPD-1",
+          at: nextState.lastSync || seedData.lastSync,
+          author: "AI Coordinator",
+          status: handoff.status,
+          text: `Handoff created for ${handoff.department}: ${handoff.nextAction}`
+        }
+      ];
+    }
+  });
+
+  nextState.parts.forEach((part) => {
+    if (!nextState.supplierPlans.some((plan) => plan.partCode === part.code) && partNeedsAttentionForState(nextState, part)) {
+      nextState.supplierPlans.push(defaultSupplierPlan(part, nextState));
     }
   });
 
@@ -582,6 +695,7 @@ function renderAll() {
   renderEngineerBars();
   renderPartsAttention();
   renderTables();
+  renderSupplierPlans();
   renderAmcs();
   renderMachines();
   renderReports();
@@ -602,6 +716,114 @@ function renderSelectors() {
   els.partSelect.innerHTML = state.parts
     .map((part) => `<option value="${escapeHtml(part.code)}">${escapeHtml(part.code)} - ${escapeHtml(part.name)}</option>`)
     .join("");
+
+  updateEngineerSuggestion();
+}
+
+function updateEngineerSuggestion(event) {
+  const form = document.getElementById("ticketForm");
+  if (!form || !els.engineerSuggestion || !state.engineers.length) return;
+
+  const data = Object.fromEntries(new FormData(form).entries());
+  const selectedPart = state.parts.find((part) => part.code === data.part);
+  const suggestion = suggestEngineerForWork(data, selectedPart);
+  if (!suggestion) return;
+
+  const shouldAutoSelect = event?.target?.name !== "engineer";
+  if (shouldAutoSelect && els.engineerSelect && els.engineerSelect.value !== suggestion.engineer.name) {
+    els.engineerSelect.value = suggestion.engineer.name;
+  }
+
+  els.engineerSuggestion.innerHTML = `
+    <div>
+      <p class="eyebrow">AI engineer suggestion</p>
+      <h5>${escapeHtml(suggestion.engineer.name)}</h5>
+      <span>${escapeHtml(suggestion.engineer.skill)} - ${escapeHtml(suggestion.engineer.location)}</span>
+    </div>
+    <div class="suggestion-score">
+      <strong>${suggestion.score}%</strong>
+      <span>match</span>
+    </div>
+    <div class="suggestion-reasons">
+      ${suggestion.reasons.map((reason) => `<span>${escapeHtml(reason)}</span>`).join("")}
+    </div>
+  `;
+}
+
+function suggestEngineerForWork(work, selectedPart) {
+  const ranked = state.engineers
+    .map((engineer) => {
+      const skillScore = engineerSkillScore(engineer, work, selectedPart);
+      const profile = engineerWorkloadProfile(engineer.name);
+      const availabilityScore = engineerAvailabilityScore(profile);
+      const urgencyScore = upcomingWorkUrgencyScore(work, selectedPart);
+      const score = Math.min(100, Math.round(skillScore + availabilityScore + urgencyScore));
+      const reasons = engineerSuggestionReasons(engineer, profile, work, selectedPart, skillScore, availabilityScore);
+      return { engineer, profile, score, reasons };
+    })
+    .sort((a, b) => b.score - a.score || a.profile.activeHours - b.profile.activeHours);
+
+  return ranked[0] || null;
+}
+
+function engineerSkillScore(engineer, work, selectedPart) {
+  const haystack = [
+    engineer.skill,
+    work.machine,
+    work.type,
+    work.issue,
+    selectedPart?.code,
+    selectedPart?.name
+  ]
+    .join(" ")
+    .toLowerCase();
+  const skill = engineer.skill.toLowerCase();
+
+  let score = 18;
+  if (skill.includes("flexo") && /(flexo|finishing|label|lsr|tension|sensor|web)/.test(haystack)) score += 34;
+  if (skill.includes("digital inkjet") && /(digital|inkjet|dsi|printhead|cleaning|phd)/.test(haystack)) score += 34;
+  if (skill.includes("security") && /(security|spm|brand|protection|uv|filter)/.test(haystack)) score += 34;
+  if (skill.includes("slitter") && /(slitter|rewinder|blade|calibration|srw|installation)/.test(haystack)) score += 34;
+  if (work.type === "Preventive maintenance" && skill.includes("security")) score += 6;
+  if (work.type === "Installation support" && skill.includes("slitter")) score += 6;
+  if (work.type === "Spare part request" && selectedPart && haystack.includes(selectedPart.code.toLowerCase())) score += 5;
+  return Math.min(score, 56);
+}
+
+function engineerAvailabilityScore(profile) {
+  const freeDays = Math.max(0, daysUntil(profile.freeDate));
+  const loadPenalty = Math.min(18, Number(profile.activeHours || 0) * 2);
+  const datePenalty = Math.min(12, freeDays * 3);
+  return Math.max(8, 32 - loadPenalty - datePenalty);
+}
+
+function upcomingWorkUrgencyScore(work, selectedPart) {
+  let score = 6;
+  if (work.type === "Breakdown support" || work.type === "Customer complaint") score += 5;
+  if (work.amc === "Expiring Soon") score += 3;
+  if (selectedPart && partStatus(selectedPart) !== "InStock") score += 3;
+  return score;
+}
+
+function engineerSuggestionReasons(engineer, profile, work, selectedPart, skillScore, availabilityScore) {
+  const reasons = [];
+  if (skillScore >= 45) {
+    reasons.push(`Skill match for ${work.machine || work.type || "this work"}`);
+  } else {
+    reasons.push(`General ${engineer.skill} coverage`);
+  }
+
+  reasons.push(profile.activeTickets.length ? `${profile.activeHours}h active, free ${formatDate(profile.freeDate)}` : "Available now");
+
+  if (selectedPart) {
+    reasons.push(`${selectedPart.code} stock: ${partStatusLabel(selectedPart)}`);
+  }
+
+  if (availabilityScore >= 24) {
+    reasons.push("Lowest scheduling risk");
+  }
+
+  return reasons.slice(0, 4);
 }
 
 function renderMetrics() {
@@ -662,7 +884,10 @@ function renderHomeTickets() {
                   ${escapeHtml(ticket.machine)}
                   <div class="small-muted">${escapeHtml(ticket.serial)}</div>
                 </td>
-                <td><span class="badge ${className(ticket.amc)}">${escapeHtml(ticket.amc)}</span></td>
+                <td>
+                  <span class="badge ${className(ticket.amc)}">${escapeHtml(ticket.amc)}</span>
+                  <div class="small-muted">${escapeHtml(materialPlanningLabel(ticket))}</div>
+                </td>
                 <td><span class="badge ${ticket.priority}">${ticket.priority}</span></td>
                 <td><span class="badge ${ticket.status}">${ticket.status}</span></td>
                 <td>${renderWorkflowMini(workflow)}</td>
@@ -694,7 +919,10 @@ function renderTickets() {
                   ${escapeHtml(ticket.type)}
                   <div class="small-muted">${escapeHtml(ticket.issue)}</div>
                 </td>
-                <td>${escapeHtml(ticket.part)}</td>
+                <td>
+                  ${escapeHtml(ticket.part)}
+                  <div class="small-muted">${escapeHtml(materialPlanningLabel(ticket))}</div>
+                </td>
                 <td><span class="badge ${ticket.priority}">${ticket.priority}</span></td>
                 <td><span class="badge ${ticket.status}">${ticket.status}</span></td>
                 <td>${renderWorkflowMini(workflow)}</td>
@@ -804,10 +1032,13 @@ function renderCoordination() {
     "status",
     "linkedTo",
     "note"
-  ]).sort((a, b) => handoffStatusRank(a.status) - handoffStatusRank(b.status) || daysUntil(a.due) - daysUntil(b.due));
+  ])
+    .filter((handoff) => handoffDeptFilter === "all" || handoff.department === handoffDeptFilter)
+    .sort((a, b) => handoffStatusRank(a.status) - handoffStatusRank(b.status) || daysUntil(a.due) - daysUntil(b.due));
 
   const activeCount = state.handoffs.filter((handoff) => handoff.status !== "Completed").length;
-  els.handoffCount.textContent = `${activeCount} active`;
+  const filteredActive = handoffs.filter((handoff) => handoff.status !== "Completed").length;
+  els.handoffCount.textContent = handoffDeptFilter === "all" ? `${activeCount} active` : `${filteredActive} ${handoffDeptFilter}`;
 
   els.coordinationRows.innerHTML = handoffs.length
     ? handoffs
@@ -815,6 +1046,7 @@ function renderCoordination() {
           const dueDays = daysUntil(handoff.due);
           const dueText = dueDays < 0 ? `${Math.abs(dueDays)} days overdue` : dueDays === 0 ? "Due today" : `${dueDays} days left`;
           const latestEmail = latestNotification(handoff);
+          const latestUpdate = latestHandoffUpdate(handoff);
           return `
             <tr class="handoff-row status-${className(handoff.status)}" data-handoff-id="${escapeHtml(handoff.id)}" tabindex="0" aria-label="View AI pipeline for ${escapeHtml(handoff.recordId)}">
               <td>
@@ -827,6 +1059,7 @@ function renderCoordination() {
               <td>
                 ${escapeHtml(handoff.nextAction)}
                 <div class="handoff-note">${escapeHtml(handoff.note)}</div>
+                ${latestUpdate ? `<div class="handoff-update-line">Last update: ${escapeHtml(latestUpdate.text)} - ${escapeHtml(latestUpdate.at)}</div>` : ""}
                 ${
                   latestEmail
                     ? `<div class="email-log-line">Last draft: ${escapeHtml(latestEmail.to)} - ${escapeHtml(notificationTime(latestEmail))}</div>`
@@ -860,37 +1093,362 @@ function renderEngineerBars() {
   els.engineerBars.innerHTML = [...totals.entries()]
     .map(([name, hours]) => {
       const width = Math.min(100, Math.round((hours / max) * 100));
+      const profile = engineerWorkloadProfile(name);
       return `
-        <div class="bar-item">
+        <button class="bar-item engineer-bar-item" type="button" data-engineer-name="${escapeHtml(name)}" aria-label="View ${escapeHtml(name)} availability details">
           <strong>${escapeHtml(firstName(name))}</strong>
           <div class="bar-track"><div class="bar-fill" style="width:${width}%"></div></div>
-          <span>${hours}h</span>
-        </div>
+          <span class="bar-hours">${hours}h</span>
+          <small>${escapeHtml(profile.freeLabel)}</small>
+        </button>
       `;
     })
     .join("");
 }
 
+function engineerWorkloadProfile(engineerName) {
+  const engineer = state.engineers.find((item) => item.name === engineerName) || {
+    name: engineerName,
+    skill: "Service engineering",
+    location: "UAE"
+  };
+  const activeTickets = state.tickets.filter((ticket) => ticket.engineer === engineerName && ticket.status !== "Completed");
+  const completedTickets = state.tickets.filter((ticket) => ticket.engineer === engineerName && ticket.status === "Completed");
+  const ticketIds = new Set(activeTickets.map((ticket) => ticket.id));
+  const handoffs = state.handoffs.filter(
+    (handoff) =>
+      handoff.status !== "Completed" &&
+      (handoff.owner === engineerName ||
+        ticketIds.has(handoff.recordId) ||
+        [...ticketIds].some((ticketId) => String(handoff.linkedTo || "").includes(ticketId)))
+  );
+  const activeHours = activeTickets.reduce((sum, ticket) => sum + Number(ticket.hoursUsed || 2), 0);
+  const ticketPlans = activeTickets
+    .map((ticket) => {
+      const handoff = handoffs.find((item) => item.recordId === ticket.id || String(item.linkedTo || "").includes(ticket.id));
+      const dueDate = handoff?.due || estimatedTicketDueDate(ticket);
+      return {
+        ticket,
+        handoff,
+        dueDate: serviceReadyDate(ticket, dueDate)
+      };
+    })
+    .sort((a, b) => new Date(`${a.dueDate}T12:00:00+04:00`) - new Date(`${b.dueDate}T12:00:00+04:00`));
+
+  const freeDate = engineerFreeDate(activeHours, ticketPlans);
+  const freeLabel = activeTickets.length ? `Free ${formatDate(freeDate)}` : "Free now";
+
+  return {
+    engineer,
+    activeTickets,
+    completedTickets,
+    handoffs,
+    ticketPlans,
+    activeHours,
+    freeDate,
+    freeLabel
+  };
+}
+
+function openEngineerDetails(engineerName) {
+  const profile = engineerWorkloadProfile(engineerName);
+  const { engineer, activeTickets, completedTickets, handoffs, ticketPlans, activeHours, freeDate } = profile;
+  const currentStatus = activeTickets.length ? "Booked" : "Available";
+
+  els.detailModalTitle.textContent = engineer.name;
+  els.detailModalMeta.textContent = "Engineer availability and assigned work";
+  els.detailModalBody.innerHTML = `
+    <div class="detail-summary-grid">
+      <div class="detail-summary-item">
+        <span>Skill area</span>
+        <strong>${escapeHtml(engineer.skill)}</strong>
+      </div>
+      <div class="detail-summary-item">
+        <span>Base location</span>
+        <strong>${escapeHtml(engineer.location)}</strong>
+      </div>
+      <div class="detail-summary-item">
+        <span>Current workload</span>
+        <strong>${activeHours}h</strong>
+        <small>${activeTickets.length} active ticket${activeTickets.length === 1 ? "" : "s"}</small>
+      </div>
+      <div class="detail-summary-item">
+        <span>Availability</span>
+        <strong>${activeTickets.length ? formatDate(freeDate) : "Available now"}</strong>
+        <small>${escapeHtml(currentStatus)}</small>
+      </div>
+    </div>
+
+    <section class="detail-block">
+      <div class="panel-heading compact-heading">
+        <div>
+          <p class="eyebrow">Current work</p>
+          <h4>Tickets and service projects under this engineer</h4>
+        </div>
+      </div>
+      ${renderEngineerTicketTable(ticketPlans)}
+    </section>
+
+    <section class="detail-block">
+      <div class="panel-heading compact-heading">
+        <div>
+          <p class="eyebrow">Coordination queue</p>
+          <h4>Other handoff actions linked to this engineer</h4>
+        </div>
+      </div>
+      ${renderEngineerHandoffTable(handoffs)}
+    </section>
+
+    <section class="detail-block">
+      <div class="panel-heading compact-heading">
+        <div>
+          <p class="eyebrow">Recent history</p>
+          <h4>Completed service work</h4>
+        </div>
+      </div>
+      ${renderEngineerHistory(completedTickets)}
+    </section>
+  `;
+
+  if (typeof els.detailModal.showModal === "function") {
+    els.detailModal.showModal();
+  } else {
+    els.detailModal.setAttribute("open", "");
+  }
+}
+
+function renderEngineerTicketTable(ticketPlans) {
+  if (!ticketPlans.length) {
+    return `<div class="empty-detail">No active tickets. Engineer can be assigned immediately.</div>`;
+  }
+
+  return `
+    <div class="table-wrap modal-table">
+      <table>
+        <thead>
+          <tr>
+            <th>Ticket</th>
+            <th>Customer / Machine</th>
+            <th>Work</th>
+            <th>Status</th>
+            <th>Due</th>
+            <th>Hours</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${ticketPlans
+            .map(
+              ({ ticket, handoff, dueDate }) => `
+                <tr class="status-${className(ticket.status)}">
+                  <td><span class="id-cell">${escapeHtml(ticket.id)}</span></td>
+                  <td>
+                    ${escapeHtml(ticket.customer)}
+                    <div class="small-muted">${escapeHtml(ticket.machine)}</div>
+                  </td>
+                  <td>
+                    ${escapeHtml(ticket.type)}
+                    <div class="small-muted">Part: ${escapeHtml(ticket.part)}</div>
+                  </td>
+                  <td>
+                    <span class="badge ${ticket.priority}">${escapeHtml(ticket.priority)}</span>
+                    <span class="badge ${ticket.status}">${escapeHtml(ticket.status)}</span>
+                  </td>
+                  <td>
+                    ${formatDate(dueDate)}
+                    <div class="small-muted">${escapeHtml(materialPlanningLabel(ticket))}</div>
+                    <div class="small-muted">${handoff ? escapeHtml(handoff.nextAction) : "Estimated from ticket age and priority"}</div>
+                  </td>
+                  <td>${Number(ticket.hoursUsed || 2)}h</td>
+                </tr>
+              `
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderEngineerHandoffTable(handoffs) {
+  if (!handoffs.length) {
+    return `<div class="empty-detail">No active department handoffs linked to this engineer.</div>`;
+  }
+
+  return `
+    <div class="table-wrap modal-table">
+      <table>
+        <thead>
+          <tr>
+            <th>Handoff</th>
+            <th>Record</th>
+            <th>Action</th>
+            <th>Due</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${handoffs
+            .map(
+              (handoff) => `
+                <tr class="status-${className(handoff.status)}">
+                  <td><span class="id-cell">${escapeHtml(handoff.id)}</span></td>
+                  <td>
+                    ${escapeHtml(handoff.recordId)}
+                    <div class="small-muted">${escapeHtml(handoff.customer)}</div>
+                  </td>
+                  <td>${escapeHtml(handoff.nextAction)}</td>
+                  <td>
+                    ${formatDate(handoff.due)}
+                    <div class="small-muted">${handoffDueText(handoff.due)}</div>
+                  </td>
+                  <td><span class="badge ${className(handoff.status)}">${escapeHtml(handoff.status)}</span></td>
+                </tr>
+              `
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderEngineerHistory(tickets) {
+  if (!tickets.length) {
+    return `<div class="empty-detail">No completed tickets in the prototype data yet.</div>`;
+  }
+
+  return `
+    <div class="pipeline-mini-list">
+      ${tickets
+        .map(
+          (ticket) => `
+            <span>
+              ${escapeHtml(ticket.id)} - ${escapeHtml(ticket.customer)}
+              <div class="small-muted">${escapeHtml(ticket.type)} completed from ${formatDate(ticket.created)} record</div>
+            </span>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
 function renderPartsAttention() {
   const parts = state.parts
-    .filter((part) => Number(part.qty) <= Number(part.min) || Number(part.leadTime) >= 21)
+    .filter(partNeedsAttention)
     .slice(0, 4);
 
   els.partsAttention.innerHTML = parts.length
     ? parts
         .map(
-          (part) => `
-            <button class="compact-item action-item" type="button" data-request-part="${escapeHtml(part.code)}" aria-label="Request ${escapeHtml(part.code)} from vendor">
-              <div>
-                <strong>${escapeHtml(part.code)}</strong>
-                <span>${escapeHtml(part.name)} - ${locationText(part)}</span>
-              </div>
-              <span class="badge ${partStatus(part)}">${partStatusLabel(part)}</span>
-            </button>
-          `
+          (part) => {
+            const suggestion = partDemandSuggestion(part);
+            return `
+              <button class="compact-item action-item part-attention-card" type="button" data-request-part="${escapeHtml(part.code)}" aria-label="Request ${escapeHtml(part.code)} from vendor">
+                <div class="part-attention-copy">
+                  <strong>${escapeHtml(part.code)}</strong>
+                  <span>${escapeHtml(part.name)} - ${locationText(part)}</span>
+                  <div class="ai-suggestion-line">
+                    <span>Suggested quantity <strong>${suggestion.quantity} pcs</strong></span>
+                    <small>${escapeHtml(suggestion.reason)}</small>
+                  </div>
+                </div>
+                <div class="part-attention-badges">
+                  <span class="badge ${partStatus(part)}">${partStatusLabel(part)}</span>
+                  <span class="badge ${suggestion.tone}">${escapeHtml(suggestion.urgency)}</span>
+                </div>
+              </button>
+            `;
+          }
         )
         .join("")
-    : `<div class="compact-item"><strong>Inventory stable</strong><span>No low stock or long lead-time records</span></div>`;
+    : `<div class="compact-item"><strong>Inventory stable</strong><span>No low stock, long lead-time or projected usage risks</span></div>`;
+}
+
+function partNeedsAttention(part) {
+  const suggestion = partDemandSuggestionForState(state, part);
+  return Number(part.qty) <= Number(part.min) || Number(part.leadTime) >= 21 || suggestion.stockAfterKnownTickets <= Number(part.min);
+}
+
+function partDemandSuggestion(part) {
+  return partDemandSuggestionForState(state, part);
+}
+
+function partNeedsAttentionForState(sourceState, part) {
+  const suggestion = partDemandSuggestionForState(sourceState, part);
+  return Number(part.qty) <= Number(part.min) || Number(part.leadTime) >= 21 || suggestion.stockAfterKnownTickets <= Number(part.min);
+}
+
+function partDemandSuggestionForState(sourceState, part) {
+  const activeTickets = sourceState.tickets.filter((ticket) => ticket.part === part.code && ticket.status !== "Completed");
+  const urgentTickets = activeTickets.filter((ticket) => ticket.priority === "High" || ticket.status === "Delayed");
+  const currentQty = Number(part.qty);
+  const minimumQty = Number(part.min);
+  const projectedUsage = activeTickets.length;
+  const stockAfterKnownTickets = currentQty - projectedUsage;
+  const stockGap = Math.max(0, minimumQty - stockAfterKnownTickets);
+  const urgencyBuffer = urgentTickets.length ? 1 : 0;
+  const leadTimeBuffer = Number(part.leadTime) >= 21 ? 1 : 0;
+  const quantity = Math.max(stockGap + urgencyBuffer + leadTimeBuffer, partStatus(part) === "InStock" ? 0 : 1);
+  const urgency = urgentTickets.length ? "Urgent" : Number(part.leadTime) >= 21 ? "Plan" : "AI";
+  const tone = urgentTickets.length ? "Critical" : Number(part.leadTime) >= 21 ? "warning" : "neutral";
+  const reasonParts = [
+    `${projectedUsage} active ticket${projectedUsage === 1 ? "" : "s"}`,
+    `${stockAfterKnownTickets} left after expected use`
+  ];
+
+  if (urgentTickets.length) {
+    reasonParts.push(`${urgentTickets.length} urgent`);
+  }
+  if (Number(part.leadTime) >= 21) {
+    reasonParts.push(`${part.leadTime} day lead`);
+  }
+
+  return {
+    quantity,
+    projectedUsage,
+    urgentTickets: urgentTickets.length,
+    stockAfterKnownTickets,
+    urgency,
+    tone,
+    reason: reasonParts.join(" - ")
+  };
+}
+
+function renderSupplierPlans() {
+  const parts = state.parts.filter((part) => partNeedsAttention(part) || state.supplierPlans.some((plan) => plan.partCode === part.code));
+
+  els.supplierLeadRows.innerHTML = parts.length
+    ? parts
+        .map((part) => {
+          const plan = supplierPlanForPart(part);
+          const allocation = partAllocationPlan(part, plan);
+          return `
+            <article class="supplier-plan-card">
+              <div>
+                <p class="eyebrow">${escapeHtml(part.code)}</p>
+                <h4>${escapeHtml(part.name)}</h4>
+                <div class="supplier-plan-meta">
+                  <span>Vendor <strong>${escapeHtml(partVendor(part.code, plan.vendor).name)}</strong></span>
+                  <span>Request <strong>${Number(plan.requestedQty || suggestedReorderQuantity(part))} pcs</strong></span>
+                  <span>ETA <strong>${plan.eta ? formatDate(plan.eta) : "Awaiting reply"}</strong></span>
+                  <span>Confirmed <strong>${Number(plan.confirmedQty || 0)} pcs</strong></span>
+                </div>
+              </div>
+              <div class="supplier-allocation">
+                <span class="badge ${className(plan.status)}">${escapeHtml(plan.status)}</span>
+                <div class="allocation-pills">
+                  <span>Allocated now <strong>${allocation.immediate.length}</strong></span>
+                  <span>Rescheduled <strong>${allocation.rescheduled.length}</strong></span>
+                  <span>Waiting <strong>${allocation.waiting.length}</strong></span>
+                </div>
+                <button class="row-button" type="button" data-update-leadtime="${escapeHtml(part.code)}">Update reply</button>
+              </div>
+            </article>
+          `;
+        })
+        .join("")
+    : `<div class="empty-detail">No supplier lead-time risks. Current stock can cover active ticket demand.</div>`;
 }
 
 function renderParts() {
@@ -899,32 +1457,193 @@ function renderParts() {
   els.partRows.innerHTML = parts.length
     ? parts
         .map(
-          (part) => `
+          (part) => {
+            const plan = supplierPlanForPart(part);
+            return `
             <tr>
               <td class="id-cell">${escapeHtml(part.code)}</td>
               <td>${escapeHtml(part.name)}</td>
               <td>${Number(part.qty)}</td>
               <td>${locationText(part)}</td>
               <td>${Number(part.leadTime)} days</td>
-              <td><span class="badge ${partStatus(part)}">${partStatusLabel(part)}</span></td>
+              <td>
+                <span class="badge ${partStatus(part)}">${partStatusLabel(part)}</span>
+                <div class="small-muted">${escapeHtml(plan.status)}${plan.eta ? ` - ETA ${formatDate(plan.eta)}` : ""}</div>
+              </td>
             </tr>
-          `
+          `;
+          }
         )
         .join("")
     : emptyRow(6, "No matching spare parts");
+}
+
+function supplierPlanForPart(part) {
+  const existingPlan = state.supplierPlans.find((plan) => plan.partCode === part.code);
+  if (existingPlan) return existingPlan;
+
+  const plan = defaultSupplierPlan(part);
+  state.supplierPlans.push(plan);
+  return plan;
+}
+
+function defaultSupplierPlan(part, sourceState = state) {
+  const suggestion = partDemandSuggestionForState(sourceState, part);
+  const vendor = partVendor(part.code);
+  return {
+    partCode: part.code,
+    requestedQty: suggestion.quantity || 1,
+    vendor: vendor.email,
+    eta: "",
+    confirmedQty: 0,
+    status: "Awaiting vendor reply",
+    updatedAt: ""
+  };
+}
+
+function resetSupplierPlanToAwaiting(sourceState, partCode) {
+  const part = sourceState.parts.find((item) => item.code === partCode);
+  if (!part) return;
+
+  let plan = sourceState.supplierPlans.find((item) => item.partCode === partCode);
+  if (!plan) {
+    plan = defaultSupplierPlan(part, sourceState);
+    sourceState.supplierPlans.push(plan);
+  }
+
+  Object.assign(plan, {
+    requestedQty: partDemandSuggestionForState(sourceState, part).quantity || 1,
+    vendor: partVendor(partCode).email,
+    eta: "",
+    confirmedQty: 0,
+    status: "Awaiting vendor reply",
+    updatedAt: ""
+  });
+
+  sourceState.tickets
+    .filter((ticket) => ticket.part === partCode && ticket.status !== "Completed")
+    .forEach((ticket) => {
+      ticket.materialStatus = "Waiting vendor confirmation";
+      ticket.materialEta = "";
+    });
+}
+
+function partAllocationPlan(part, plan = supplierPlanForPart(part)) {
+  let availableNow = Number(part.qty);
+  let incomingQty = Number(plan.confirmedQty || 0);
+  const immediate = [];
+  const rescheduled = [];
+  const waiting = [];
+
+  sortedPartTickets(part.code).forEach((ticket) => {
+    if (availableNow > 0) {
+      immediate.push(ticket);
+      availableNow -= 1;
+      return;
+    }
+
+    if (plan.eta && incomingQty > 0) {
+      rescheduled.push(ticket);
+      incomingQty -= 1;
+      return;
+    }
+
+    waiting.push(ticket);
+  });
+
+  return { immediate, rescheduled, waiting };
+}
+
+function sortedPartTickets(partCode) {
+  return state.tickets
+    .filter((ticket) => ticket.part === partCode && ticket.status !== "Completed")
+    .sort((a, b) => ticketUrgencyRank(a) - ticketUrgencyRank(b) || new Date(`${a.created}T12:00:00+04:00`) - new Date(`${b.created}T12:00:00+04:00`));
+}
+
+function ticketUrgencyRank(ticket) {
+  if (ticket.status === "Delayed") return 0;
+  if (ticket.priority === "High") return 1;
+  if (ticket.priority === "Medium") return 2;
+  return 3;
+}
+
+function saveSupplierLeadTimeReply(partCode, eta, confirmedQty, vendorEmail) {
+  const part = state.parts.find((item) => item.code === partCode);
+  if (!part || !eta || !Number.isFinite(confirmedQty)) return;
+
+  const plan = supplierPlanForPart(part);
+  plan.vendor = vendorEmail;
+  plan.eta = eta;
+  plan.confirmedQty = Math.max(0, confirmedQty);
+  plan.requestedQty = Math.max(Number(plan.requestedQty || 0), confirmedQty);
+  plan.status = "Vendor confirmed";
+  plan.updatedAt = notificationTimestamp();
+
+  applySupplierPlanToTickets(part, plan);
+  persistState(`Supplier ETA saved for ${part.code}. Affected tickets rescheduled.`);
+  els.detailModalTitle.textContent = `${part.code} vendor request`;
+  els.detailModalMeta.textContent = "Supplier reply applied to service planning";
+  els.detailModalBody.innerHTML = renderPartVendorRequestBody(part);
+}
+
+function applySupplierPlanToTickets(part, plan) {
+  const allocation = partAllocationPlan(part, plan);
+
+  allocation.immediate.forEach((ticket) => {
+    ticket.materialStatus = "Material allocated";
+    ticket.materialEta = toDateInput(today);
+  });
+
+  allocation.rescheduled.forEach((ticket) => {
+    ticket.materialStatus = "Rescheduled for supplier ETA";
+    ticket.materialEta = plan.eta;
+  });
+
+  allocation.waiting.forEach((ticket) => {
+    ticket.materialStatus = "Waiting vendor confirmation";
+    ticket.materialEta = "";
+  });
+}
+
+function materialPlanningLabel(ticket) {
+  if (ticket.materialStatus) {
+    return ticket.materialEta ? `${ticket.materialStatus} - ${formatDate(ticket.materialEta)}` : ticket.materialStatus;
+  }
+
+  const part = state.parts.find((item) => item.code === ticket.part);
+  if (!part || ticket.status === "Completed") return "Material closed";
+
+  const allocation = partAllocationPlan(part);
+  if (allocation.immediate.some((item) => item.id === ticket.id)) return "Material can be allocated now";
+  if (allocation.rescheduled.some((item) => item.id === ticket.id)) return `Reschedule to ETA ${formatDate(supplierPlanForPart(part).eta)}`;
+  if (allocation.waiting.some((item) => item.id === ticket.id)) return "Waiting vendor confirmation";
+  return "Material check ready";
 }
 
 function openPartVendorRequest(partCode) {
   const part = state.parts.find((item) => item.code === partCode);
   if (!part) return;
 
-  const vendor = partVendor(part.code);
-  const suggestedQuantity = suggestedReorderQuantity(part);
-  const linkedTickets = state.tickets.filter((ticket) => ticket.part === part.code && ticket.status !== "Completed");
-
   els.detailModalTitle.textContent = `${part.code} vendor request`;
   els.detailModalMeta.textContent = "Stores - parts requiring attention";
-  els.detailModalBody.innerHTML = `
+  els.detailModalBody.innerHTML = renderPartVendorRequestBody(part);
+
+  if (typeof els.detailModal.showModal === "function") {
+    els.detailModal.showModal();
+  } else {
+    els.detailModal.setAttribute("open", "");
+  }
+}
+
+function renderPartVendorRequestBody(part) {
+  const plan = supplierPlanForPart(part);
+  const vendor = partVendor(part.code, plan.vendor);
+  const suggestion = partDemandSuggestion(part);
+  const suggestedQuantity = Number(plan.requestedQty || suggestion.quantity);
+  const linkedTickets = state.tickets.filter((ticket) => ticket.part === part.code && ticket.status !== "Completed");
+  const allocation = partAllocationPlan(part, plan);
+
+  return `
     <div class="detail-summary-grid">
       <div class="detail-summary-item">
         <span>Current stock</span>
@@ -971,6 +1690,7 @@ function openPartVendorRequest(partCode) {
           <span>Part code <strong>${escapeHtml(part.code)}</strong></span>
           <span>Linked demand <strong>${linkedTickets.length} active ticket${linkedTickets.length === 1 ? "" : "s"}</strong></span>
           <span>Suggested request <strong>${suggestedQuantity} pcs</strong></span>
+          <span>AI check <strong>${escapeHtml(suggestion.reason)}</strong></span>
         </div>
         <div class="form-actions">
           <button type="submit" class="primary-button">Draft Vendor Email</button>
@@ -978,13 +1698,44 @@ function openPartVendorRequest(partCode) {
         </div>
       </form>
     </section>
-  `;
 
-  if (typeof els.detailModal.showModal === "function") {
-    els.detailModal.showModal();
-  } else {
-    els.detailModal.setAttribute("open", "");
-  }
+    <section class="detail-block vendor-request-panel">
+      <div class="panel-heading compact-heading">
+        <div>
+          <p class="eyebrow">Vendor reply</p>
+          <h4>Update delivery time and reschedule affected tickets</h4>
+        </div>
+        <span class="badge ${className(plan.status)}">${escapeHtml(plan.status)}</span>
+      </div>
+      <form class="vendor-request-form" data-leadtime-reply-form data-part-code="${escapeHtml(part.code)}">
+        <div class="form-row three-col">
+          <label>
+            Confirmed quantity
+            <input name="confirmedQty" type="number" min="0" step="1" value="${Number(plan.confirmedQty || suggestedQuantity)}" required />
+          </label>
+          <label>
+            Delivery ETA
+            <input name="eta" type="date" value="${escapeHtml(plan.eta || toDateInput(addDays(today, Number(part.leadTime || 7))))}" required />
+          </label>
+          <label>
+            Vendor
+            <select name="vendor">
+              ${renderVendorOptions(vendor.email)}
+            </select>
+          </label>
+        </div>
+        <div class="supplier-impact-grid">
+          <span>Urgent allocation <strong>${allocation.immediate.map((ticket) => ticket.id).join(", ") || "None"}</strong></span>
+          <span>Rescheduled <strong>${allocation.rescheduled.map((ticket) => ticket.id).join(", ") || "None"}</strong></span>
+          <span>Waiting <strong>${allocation.waiting.map((ticket) => ticket.id).join(", ") || "None"}</strong></span>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="primary-button">Apply Vendor Reply</button>
+          <span class="form-hint">Updates material ETA on affected service tickets.</span>
+        </div>
+      </form>
+    </section>
+  `;
 }
 
 function renderVendorOptions(selectedEmail) {
@@ -1004,6 +1755,12 @@ function draftVendorPartEmail(partCode, quantity, vendorEmail) {
   if (!part || !Number.isFinite(quantity) || quantity <= 0) return;
 
   const vendor = partVendor(part.code, vendorEmail);
+  const plan = supplierPlanForPart(part);
+  plan.vendor = vendor.email;
+  plan.requestedQty = quantity;
+  plan.status = "Awaiting vendor reply";
+  plan.updatedAt = notificationTimestamp();
+
   const notification = {
     to: vendor.email,
     recipient: vendor.name,
@@ -1032,6 +1789,9 @@ function draftVendorPartEmail(partCode, quantity, vendorEmail) {
       </div>
     </section>
   `;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  renderSupplierPlans();
+  renderParts();
   openEmailDraft(notification);
 }
 
@@ -1072,9 +1832,7 @@ function partVendor(partCode, selectedEmail = null) {
 }
 
 function suggestedReorderQuantity(part) {
-  const shortage = Math.max(0, Number(part.min) - Number(part.qty));
-  const activeDemand = state.tickets.filter((ticket) => ticket.part === part.code && ticket.status !== "Completed").length;
-  return Math.max(shortage + activeDemand + 1, Number(part.min), 1);
+  return partDemandSuggestion(part).quantity;
 }
 
 function renderAmcs() {
@@ -1525,6 +2283,33 @@ function renderHandoffPipeline(handoff, pipeline) {
       </section>
     </div>
 
+    <section class="handoff-log-panel">
+      <div class="panel-heading compact-heading">
+        <div>
+          <p class="eyebrow">Department update log</p>
+          <h4>Shared handoff comments and timeline</h4>
+        </div>
+      </div>
+      <form class="handoff-update-form" data-handoff-update-form data-handoff-id="${escapeHtml(handoff.id)}">
+        <label>
+          Update note
+          <textarea name="updateText" rows="3" required placeholder="e.g. Stores confirmed part ETA; service visit rescheduled"></textarea>
+        </label>
+        <div class="form-row two-col">
+          <label>
+            Status
+            <select name="nextStatus">
+              ${renderHandoffStatusOptions(handoff.status)}
+            </select>
+          </label>
+          <div class="handoff-update-action">
+            <button type="submit" class="primary-button">Log Update</button>
+          </div>
+        </div>
+      </form>
+      ${renderHandoffUpdateLog(handoff)}
+    </section>
+
     <section class="notification-log">
       <div class="panel-heading compact-heading">
         <div>
@@ -1541,6 +2326,68 @@ function renderPipelineMiniList(steps, emptyMessage) {
   return steps.length
     ? `<div class="pipeline-mini-list">${steps.map((step) => `<span>${escapeHtml(step.title)}</span>`).join("")}</div>`
     : `<div class="empty-detail">${escapeHtml(emptyMessage)}</div>`;
+}
+
+function renderHandoffStatusOptions(currentStatus) {
+  return ["Pending", "Waiting", "In progress", "Delayed", "Overdue", "Completed"]
+    .map((status) => `<option value="${status}" ${status === currentStatus ? "selected" : ""}>${status}</option>`)
+    .join("");
+}
+
+function renderHandoffUpdateLog(handoff) {
+  const updates = [...(handoff.updates || [])].reverse();
+
+  if (!updates.length) {
+    return `<div class="empty-detail">No handoff updates yet.</div>`;
+  }
+
+  return `
+    <div class="handoff-timeline">
+      ${updates
+        .map(
+          (update) => `
+            <article class="handoff-update-item">
+              <div>
+                <strong>${escapeHtml(update.author)}</strong>
+                <span>${escapeHtml(update.at)} - ${escapeHtml(update.status)}</span>
+              </div>
+              <p>${escapeHtml(update.text)}</p>
+            </article>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function latestHandoffUpdate(handoff) {
+  return Array.isArray(handoff.updates) && handoff.updates.length ? handoff.updates.at(-1) : null;
+}
+
+function appendHandoffUpdate(handoff, text, status = handoff.status, author = "Coordinator") {
+  if (!Array.isArray(handoff.updates)) {
+    handoff.updates = [];
+  }
+
+  const update = {
+    id: nextId("UPD", handoff.updates),
+    at: notificationTimestamp(),
+    author,
+    status,
+    text
+  };
+  handoff.updates.push(update);
+  return update;
+}
+
+function submitHandoffUpdate(handoffId, text, nextStatus) {
+  const handoff = state.handoffs.find((item) => item.id === handoffId);
+  if (!handoff || !String(text || "").trim()) return;
+
+  handoff.status = nextStatus;
+  appendHandoffUpdate(handoff, String(text).trim(), nextStatus);
+  persistState(`Handoff ${handoff.id} update logged`);
+  els.detailModalBody.innerHTML = renderHandoffPipeline(handoff, buildHandoffPipeline(handoff));
 }
 
 function sendPipelineStepNotification(handoffId, stepIndex) {
@@ -1577,6 +2424,7 @@ function sendHandoffNotification(handoff, step, trigger) {
   };
 
   handoff.notifications.push(notification);
+  appendHandoffUpdate(handoff, `Email draft created for ${recipient.label}: ${notification.subject}`, handoff.status, "AI Coordinator");
   return notification;
 }
 
@@ -1859,7 +2707,7 @@ function ticketColumns() {
     { heading: "ID", cell: (ticket) => `<span class="id-cell">${escapeHtml(ticket.id)}</span>` },
     { heading: "Customer", cell: (ticket) => `${escapeHtml(ticket.customer)}<div class="small-muted">${escapeHtml(ticket.source)}</div>` },
     { heading: "Issue", cell: (ticket) => `${escapeHtml(ticket.type)}<div class="small-muted">${escapeHtml(ticket.issue)}</div>` },
-    { heading: "Part", cell: (ticket) => escapeHtml(ticket.part) },
+    { heading: "Part", cell: (ticket) => `${escapeHtml(ticket.part)}<div class="small-muted">${escapeHtml(materialPlanningLabel(ticket))}</div>` },
     { heading: "Priority", cell: (ticket) => `<span class="badge ${ticket.priority}">${ticket.priority}</span>` },
     { heading: "Status", cell: (ticket) => `<span class="badge ${ticket.status}">${ticket.status}</span>` },
     { heading: "Engineer", cell: (ticket) => escapeHtml(ticket.engineer) }
@@ -1898,6 +2746,33 @@ function recordStatusClass(record) {
 }
 
 function renderMachines() {
+  const machines = machineProfiles().filter((machine) => {
+    if (!searchTerm) return true;
+    return [machine.customer, machine.machine, machine.serial, ...machine.parts].join(" ").toLowerCase().includes(searchTerm);
+  });
+
+  els.machineCards.innerHTML = machines.length
+    ? machines
+        .map(
+          (machine) => `
+            <article class="machine-card clickable-card" data-machine-serial="${escapeHtml(machine.serial)}" role="button" tabindex="0" aria-label="View service history for ${escapeHtml(machine.machine)}">
+              <p class="eyebrow">${escapeHtml(machine.serial)}</p>
+              <h4>${escapeHtml(machine.machine)}</h4>
+              <div class="small-muted">${escapeHtml(machine.customer)}</div>
+              <div class="machine-meta">
+                <span>Total cases <strong>${machine.tickets.length}</strong></span>
+                <span>Service hours <strong>${machine.hours}</strong></span>
+                <span>Parts used / required <strong>${escapeHtml([...machine.parts].join(", "))}</strong></span>
+                <span>Latest status <strong>${escapeHtml(machine.tickets.at(-1).status)}</strong></span>
+              </div>
+            </article>
+          `
+        )
+        .join("")
+    : `<article class="machine-card"><h4>No matching machine history</h4></article>`;
+}
+
+function machineProfiles() {
   const machineMap = new Map();
 
   state.tickets.forEach((ticket) => {
@@ -1918,30 +2793,204 @@ function renderMachines() {
     machine.hours += Number(ticket.hoursUsed || 0);
   });
 
-  const machines = [...machineMap.values()].filter((machine) => {
-    if (!searchTerm) return true;
-    return [machine.customer, machine.machine, machine.serial, ...machine.parts].join(" ").toLowerCase().includes(searchTerm);
-  });
+  return [...machineMap.values()].map((machine) => ({
+    ...machine,
+    tickets: machine.tickets.sort((first, second) => new Date(`${first.created}T12:00:00+04:00`) - new Date(`${second.created}T12:00:00+04:00`)),
+    amc: state.amcs.find((amc) => amc.serial === machine.serial) || null
+  }));
+}
 
-  els.machineCards.innerHTML = machines.length
-    ? machines
-        .map(
-          (machine) => `
-            <article class="machine-card">
-              <p class="eyebrow">${escapeHtml(machine.serial)}</p>
-              <h4>${escapeHtml(machine.machine)}</h4>
-              <div class="small-muted">${escapeHtml(machine.customer)}</div>
-              <div class="machine-meta">
-                <span>Total cases <strong>${machine.tickets.length}</strong></span>
-                <span>Service hours <strong>${machine.hours}</strong></span>
-                <span>Parts replaced <strong>${escapeHtml([...machine.parts].join(", "))}</strong></span>
-                <span>Latest status <strong>${escapeHtml(machine.tickets.at(-1).status)}</strong></span>
+function machineProfile(serial) {
+  return machineProfiles().find((machine) => machine.serial === serial);
+}
+
+function openMachineDetails(serial) {
+  const machine = machineProfile(serial);
+  if (!machine) return;
+
+  const latestTicket = machine.tickets.at(-1);
+  const activeTickets = machine.tickets.filter((ticket) => ticket.status !== "Completed");
+  const complaintTickets = machine.tickets.filter((ticket) => ticket.type === "Customer complaint");
+  const amc = machine.amc;
+  const amcLabel = amc ? `${amcStatus(amc)} - ${amc.id}` : "No AMC linked";
+
+  els.detailModalTitle.textContent = machine.machine;
+  els.detailModalMeta.textContent = `Machine history - ${machine.serial}`;
+  els.detailModalBody.innerHTML = `
+    <div class="detail-summary-grid">
+      <div class="detail-summary-item">
+        <span>Customer</span>
+        <strong>${escapeHtml(machine.customer)}</strong>
+      </div>
+      <div class="detail-summary-item">
+        <span>AMC / warranty</span>
+        <strong>${escapeHtml(amcLabel)}</strong>
+        ${amc ? `<small>Expiry ${formatDate(amc.expiry)}</small>` : "<small>Commercial review needed if service is chargeable</small>"}
+      </div>
+      <div class="detail-summary-item">
+        <span>Total service cases</span>
+        <strong>${machine.tickets.length}</strong>
+        <small>${activeTickets.length} active</small>
+      </div>
+      <div class="detail-summary-item">
+        <span>Service hours</span>
+        <strong>${machine.hours}h</strong>
+        <small>Logged from ticket work</small>
+      </div>
+      <div class="detail-summary-item">
+        <span>Parts used / required</span>
+        <strong>${escapeHtml([...machine.parts].join(", "))}</strong>
+      </div>
+      <div class="detail-summary-item">
+        <span>Latest status</span>
+        <strong><span class="badge ${latestTicket.status}">${escapeHtml(latestTicket.status)}</span></strong>
+        <small>${formatDate(latestTicket.created)}</small>
+      </div>
+    </div>
+
+    <section class="detail-block">
+      <div class="panel-heading compact-heading">
+        <div>
+          <p class="eyebrow">Service timeline</p>
+          <h4>Breakdowns, repairs, visits and follow-ups</h4>
+        </div>
+      </div>
+      ${renderMachineTimeline(machine.tickets)}
+    </section>
+
+    <section class="detail-block">
+      <div class="panel-heading compact-heading">
+        <div>
+          <p class="eyebrow">Engineer visits</p>
+          <h4>Work performed on this installed machine</h4>
+        </div>
+      </div>
+      ${renderDetailTable(machineVisitColumns(), [...machine.tickets].reverse(), "No engineer visits recorded for this machine.")}
+    </section>
+
+    <section class="detail-block">
+      <div class="panel-heading compact-heading">
+        <div>
+          <p class="eyebrow">Customer issue log</p>
+          <h4>Complaints and service notes</h4>
+        </div>
+      </div>
+      ${renderMachineComplaintLog(machine.tickets, complaintTickets)}
+    </section>
+
+    <section class="detail-block">
+      <div class="panel-heading compact-heading">
+        <div>
+          <p class="eyebrow">AMC entitlement context</p>
+          <h4>Coverage linked to this machine</h4>
+        </div>
+      </div>
+      ${renderMachineAmcContext(machine)}
+    </section>
+  `;
+
+  if (typeof els.detailModal.showModal === "function") {
+    els.detailModal.showModal();
+  } else {
+    els.detailModal.setAttribute("open", "");
+  }
+}
+
+function renderMachineTimeline(tickets) {
+  return `
+    <div class="machine-history-timeline">
+      ${[...tickets]
+        .reverse()
+        .map((ticket) => {
+          const part = state.parts.find((item) => item.code === ticket.part);
+          return `
+            <article class="machine-history-event status-${className(ticket.status)}">
+              <div>
+                <strong>${escapeHtml(ticket.type)}</strong>
+                <span class="event-date">${formatDate(ticket.created)}</span>
               </div>
+              <p>${escapeHtml(ticket.issue)}</p>
+              <small>
+                ${escapeHtml(ticket.id)} - ${escapeHtml(ticket.engineer)} - ${escapeHtml(part?.name || ticket.part)} - ${Number(ticket.hoursUsed || 0)}h
+              </small>
+              <span class="badge ${ticket.status}">${escapeHtml(ticket.status)}</span>
             </article>
-          `
-        )
-        .join("")
-    : `<article class="machine-card"><h4>No matching machine history</h4></article>`;
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
+function machineVisitColumns() {
+  return [
+    { heading: "Ticket", cell: (ticket) => `<span class="id-cell">${escapeHtml(ticket.id)}</span><div class="small-muted">${formatDate(ticket.created)}</div>` },
+    { heading: "Engineer", cell: (ticket) => escapeHtml(ticket.engineer) },
+    { heading: "Work type", cell: (ticket) => `${escapeHtml(ticket.type)}<div class="small-muted">${escapeHtml(ticket.issue)}</div>` },
+    { heading: "Part", cell: (ticket) => `${escapeHtml(ticket.part)}<div class="small-muted">${escapeHtml(partName(ticket.part))}</div>` },
+    { heading: "Hours", cell: (ticket) => `${Number(ticket.hoursUsed || 0)}h` },
+    { heading: "Status", cell: (ticket) => `<span class="badge ${ticket.status}">${escapeHtml(ticket.status)}</span>` }
+  ];
+}
+
+function renderMachineComplaintLog(tickets, complaintTickets) {
+  const records = complaintTickets.length ? complaintTickets : tickets;
+  const emptyNote = complaintTickets.length
+    ? "No customer complaint tickets recorded for this machine."
+    : "No dedicated customer complaint ticket yet. Service issue notes are shown below for traceability.";
+
+  return `
+    ${!complaintTickets.length ? `<div class="empty-detail machine-complaint-note">${emptyNote}</div>` : ""}
+    ${renderDetailTable(
+      [
+        { heading: "Ticket", cell: (ticket) => `<span class="id-cell">${escapeHtml(ticket.id)}</span><div class="small-muted">${formatDate(ticket.created)}</div>` },
+        { heading: "Source", cell: (ticket) => escapeHtml(ticket.source) },
+        { heading: "Type", cell: (ticket) => escapeHtml(ticket.type) },
+        { heading: "Customer note", cell: (ticket) => escapeHtml(ticket.issue) },
+        { heading: "Status", cell: (ticket) => `<span class="badge ${ticket.status}">${escapeHtml(ticket.status)}</span>` }
+      ],
+      records,
+      emptyNote
+    )}
+  `;
+}
+
+function renderMachineAmcContext(machine) {
+  const { amc } = machine;
+
+  if (!amc) {
+    return `<div class="empty-detail">No AMC record is linked to this machine serial. Service can still be tracked as warranty or chargeable work.</div>`;
+  }
+
+  const usedHours = Math.max(0, Number(amc.hoursTotal) - Number(amc.hoursLeft));
+  const usedVisits = Math.max(0, Number(amc.visitsTotal) - Number(amc.visitsLeft));
+
+  return `
+    <div class="entitlement-grid">
+      <section class="entitlement-card">
+        <p class="eyebrow">Hours entitlement</p>
+        <h4>${usedHours} / ${Number(amc.hoursTotal)} used</h4>
+        <div class="util-track"><div class="util-fill" style="width:${utilizationPercent(usedHours, amc.hoursTotal)}%"></div></div>
+        <div class="contract-meta">
+          <span>Remaining <strong>${Number(amc.hoursLeft)}h</strong></span>
+          <span>Status <strong>${amcStatus(amc)}</strong></span>
+        </div>
+      </section>
+      <section class="entitlement-card">
+        <p class="eyebrow">Visit entitlement</p>
+        <h4>${usedVisits} / ${Number(amc.visitsTotal)} used</h4>
+        <div class="util-track"><div class="util-fill" style="width:${utilizationPercent(usedVisits, amc.visitsTotal)}%"></div></div>
+        <div class="contract-meta">
+          <span>Remaining <strong>${Number(amc.visitsLeft)}</strong></span>
+          <span>Expiry <strong>${formatDate(amc.expiry)}</strong></span>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function partName(partCode) {
+  return state.parts.find((part) => part.code === partCode)?.name || "Part master not found";
 }
 
 function renderReports() {
@@ -1969,7 +3018,7 @@ function renderReports() {
     )
     .join("");
 
-  const recordCount = state.tickets.length + state.parts.length + state.amcs.length + state.quotes.length + state.handoffs.length;
+  const recordCount = state.tickets.length + state.parts.length + state.amcs.length + state.quotes.length + state.handoffs.length + state.supplierPlans.length;
   els.recordCount.textContent = `${recordCount} records`;
   els.backendPreview.textContent = JSON.stringify(
     {
@@ -1981,10 +3030,12 @@ function renderReports() {
         amcContracts: state.amcs.length,
         quotations: state.quotes.length,
         departmentHandoffs: state.handoffs.length,
+        supplierLeadTimes: state.supplierPlans.length,
         machineHistory: new Set(state.tickets.map((ticket) => ticket.serial)).size
       },
       sampleLatestTicket: state.tickets.at(-1),
-      sampleInventoryRecord: state.parts.at(-1)
+      sampleInventoryRecord: state.parts.at(-1),
+      sampleSupplierPlan: state.supplierPlans.at(-1)
     },
     null,
     2
@@ -2032,6 +3083,9 @@ function saveTicket(event) {
     linkedTo: `${ticket.amc} / ${ticket.part}`,
     note: `${ticket.priority} priority request created from ${ticket.source}.`
   });
+  if (selectedPart && state.supplierPlans.some((plan) => plan.partCode === selectedPart.code)) {
+    applySupplierPlanToTickets(selectedPart, supplierPlanForPart(selectedPart));
+  }
   event.currentTarget.reset();
   renderSelectors();
   persistState(`Ticket ${ticket.id} saved`);
@@ -2072,6 +3126,10 @@ function savePart(event) {
       linkedTo: `${part.warehouse} / Rack ${part.rack} / Shelf ${part.shelf} / Bin ${part.bin}`,
       note: `${partStatusLabel(part)} item needs inventory action.`
     });
+  }
+
+  if (partNeedsAttention(part) && !state.supplierPlans.some((plan) => plan.partCode === part.code)) {
+    state.supplierPlans.push(defaultSupplierPlan(part));
   }
 
   event.currentTarget.reset();
@@ -2152,6 +3210,7 @@ function advanceHandoff(handoffId) {
   const handoff = state.handoffs.find((item) => item.id === handoffId);
   if (!handoff) return;
 
+  const previousStatus = handoff.status;
   if (handoff.status === "Completed") {
     handoff.status = "Pending";
   } else if (handoff.status === "In progress") {
@@ -2160,6 +3219,7 @@ function advanceHandoff(handoffId) {
     handoff.status = "In progress";
   }
 
+  appendHandoffUpdate(handoff, `Status changed from ${previousStatus} to ${handoff.status}`, handoff.status, "Coordinator");
   const notification = sendHandoffNotification(handoff, null, handoff.status === "Completed" ? "Completion update" : "Coordinator action");
   persistState(`Handoff ${handoff.id} moved to ${handoff.status}. Outlook draft opened for ${notification.to}`);
   openEmailDraft(notification);
@@ -2168,6 +3228,15 @@ function advanceHandoff(handoffId) {
 function addHandoff(handoff) {
   state.handoffs.push({
     id: nextId("HOF", state.handoffs),
+    updates: [
+      {
+        id: "UPD-1",
+        at: notificationTimestamp(),
+        author: "AI Coordinator",
+        status: handoff.status,
+        text: `Handoff created for ${handoff.department}: ${handoff.nextAction}`
+      }
+    ],
     ...handoff
   });
 }
@@ -2265,6 +3334,38 @@ function nextId(prefix, records) {
     return match ? Math.max(highest, Number(match[1])) : highest;
   }, 0);
   return `${prefix}-${max + 1}`;
+}
+
+function estimatedTicketDueDate(ticket) {
+  if (ticket.status === "Delayed") return toDateInput(today);
+
+  const baseDate = new Date(`${ticket.created}T12:00:00+04:00`);
+  const priorityDays = ticket.priority === "High" ? 3 : ticket.priority === "Medium" ? 4 : 6;
+  return toDateInput(addDays(baseDate, priorityDays));
+}
+
+function serviceReadyDate(ticket, plannedDate) {
+  if (!ticket.materialEta || ticket.materialStatus === "Material allocated") return plannedDate;
+
+  const planned = new Date(`${plannedDate}T12:00:00+04:00`);
+  const materialEta = new Date(`${ticket.materialEta}T12:00:00+04:00`);
+  return toDateInput(materialEta > planned ? materialEta : planned);
+}
+
+function engineerFreeDate(activeHours, ticketPlans) {
+  if (!activeHours && !ticketPlans.length) return toDateInput(today);
+
+  const effortDays = Math.max(1, Math.ceil(Number(activeHours || 0) / 6));
+  const effortFreeDate = addDays(today, effortDays);
+  const handoffFreeDates = ticketPlans.map((plan) => addDays(new Date(`${plan.dueDate}T12:00:00+04:00`), 1));
+  const latestFreeDate = handoffFreeDates.reduce((latest, date) => (date > latest ? date : latest), effortFreeDate);
+  return toDateInput(latestFreeDate);
+}
+
+function addDays(date, days) {
+  const nextDate = new Date(date);
+  nextDate.setDate(nextDate.getDate() + Number(days));
+  return nextDate;
 }
 
 function daysUntil(dateString) {

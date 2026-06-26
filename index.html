@@ -109,24 +109,6 @@
             <section class="panel">
               <div class="panel-heading">
                 <div>
-                  <p class="eyebrow">Workflow</p>
-                  <h4>Service workflow</h4>
-                </div>
-              </div>
-              <div class="workflow-steps">
-                <span><strong>01</strong>Request</span>
-                <span><strong>02</strong>Ticket</span>
-                <span><strong>03</strong>AMC check</span>
-                <span><strong>04</strong>Engineer</span>
-                <span><strong>05</strong>Parts</span>
-                <span><strong>06</strong>Follow-up</span>
-                <span><strong>07</strong>Report</span>
-              </div>
-            </section>
-
-            <section class="panel">
-              <div class="panel-heading">
-                <div>
                   <p class="eyebrow">Engineer workload</p>
                   <h4>Assigned service hours</h4>
                 </div>
@@ -160,6 +142,13 @@
               <div>
                 <p class="eyebrow">Cross-team work queue</p>
                 <h4>Sales, service, stores and accounts actions</h4>
+              </div>
+              <div class="filter-tabs" role="group" aria-label="Department handoff filter">
+                <button class="filter-tab active" data-handoff-dept-filter="all">All</button>
+                <button class="filter-tab" data-handoff-dept-filter="Service">Service</button>
+                <button class="filter-tab" data-handoff-dept-filter="Stores">Stores</button>
+                <button class="filter-tab" data-handoff-dept-filter="Accounts">Accounts</button>
+                <button class="filter-tab" data-handoff-dept-filter="Sales">Sales</button>
               </div>
             </div>
             <div class="table-wrap tall">
@@ -257,6 +246,8 @@
                   <select name="part" id="partSelect"></select>
                 </label>
               </div>
+
+              <div id="engineerSuggestion" class="ai-suggestion-card" aria-live="polite"></div>
 
               <label>
                 Issue summary
@@ -458,6 +449,16 @@
               <h3>Spare parts and consumables visibility</h3>
             </div>
           </div>
+
+          <section class="panel table-panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Supplier lead-time tracking</p>
+                  <h4>Parts availability linked to service planning</h4>
+                </div>
+              </div>
+              <div id="supplierLeadRows" class="supplier-plan-list"></div>
+          </section>
 
           <section class="panel table-panel">
               <div class="panel-heading">

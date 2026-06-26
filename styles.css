@@ -368,7 +368,7 @@ button {
 }
 
 .operations-grid {
-  grid-template-columns: 1.1fr 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(280px, 1fr));
 }
 
 .reports-grid {
@@ -427,6 +427,8 @@ button {
 .badge.ExpiringSoon,
 .badge.Pending,
 .badge.Waiting,
+.badge.Awaitingvendorreply,
+.badge.Emaildrafted,
 .badge.Sent,
 .badge.Negotiation,
 .badge.AwaitingPO {
@@ -443,6 +445,7 @@ button {
 .badge.Low,
 .badge.Active,
 .badge.Completed,
+.badge.Vendorconfirmed,
 .badge.Won,
 .badge.InStock {
   background: var(--green-soft);
@@ -591,6 +594,52 @@ tbody tr.status-Inprogress td:first-child {
   transform: translateY(-1px);
 }
 
+.part-attention-card {
+  align-items: stretch;
+}
+
+.part-attention-copy {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.part-attention-badges {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  flex-direction: column;
+  gap: 7px;
+  flex-shrink: 0;
+}
+
+.ai-suggestion-line {
+  display: grid;
+  gap: 3px;
+  margin-top: 3px;
+  padding: 8px 10px;
+  border: 1px solid rgba(15, 118, 110, 0.16);
+  border-radius: 8px;
+  background: var(--teal-soft);
+}
+
+.compact-item .ai-suggestion-line span {
+  color: var(--teal);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.ai-suggestion-line strong {
+  color: var(--ink);
+}
+
+.ai-suggestion-line small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
 .alert-item strong,
 .compact-item strong {
   display: block;
@@ -601,33 +650,6 @@ tbody tr.status-Inprogress td:first-child {
 .compact-item span {
   color: var(--muted);
   font-size: 0.82rem;
-}
-
-.workflow-steps {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
-  gap: 10px;
-}
-
-.workflow-steps span {
-  position: relative;
-  min-height: 64px;
-  display: grid;
-  align-content: center;
-  gap: 4px;
-  padding: 11px 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface-soft);
-  color: #333a3c;
-  font-size: 0.88rem;
-  font-weight: 800;
-}
-
-.workflow-steps strong {
-  color: var(--teal);
-  font-size: 0.72rem;
-  letter-spacing: 0;
 }
 
 .workflow-mini {
@@ -727,6 +749,66 @@ tbody tr.status-Inprogress td:first-child {
   color: var(--ink);
 }
 
+.supplier-plan-list {
+  display: grid;
+  gap: 10px;
+}
+
+.supplier-plan-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(230px, auto);
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.supplier-plan-card h4 {
+  margin: 0;
+}
+
+.supplier-plan-meta,
+.allocation-pills,
+.supplier-impact-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 9px;
+}
+
+.supplier-plan-meta span,
+.allocation-pills span,
+.supplier-impact-grid span {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.supplier-plan-meta strong,
+.allocation-pills strong,
+.supplier-impact-grid strong {
+  color: var(--ink);
+}
+
+.supplier-allocation {
+  display: grid;
+  justify-items: end;
+  gap: 9px;
+}
+
+.supplier-impact-grid {
+  margin-top: 0;
+}
+
 .dept-pill {
   display: inline-flex;
   align-items: center;
@@ -753,6 +835,13 @@ tbody tr.status-Inprogress td:first-child {
   font-weight: 800;
 }
 
+.handoff-update-line {
+  margin-top: 7px;
+  color: var(--blue);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
 .handoff-row {
   cursor: pointer;
 }
@@ -764,9 +853,41 @@ tbody tr.status-Inprogress td:first-child {
 
 .bar-item {
   display: grid;
-  grid-template-columns: 92px 1fr 42px;
+  grid-template-columns: 92px minmax(0, 1fr) 42px minmax(86px, auto);
   align-items: center;
   gap: 10px;
+}
+
+.engineer-bar-item {
+  width: 100%;
+  min-height: 42px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+}
+
+.engineer-bar-item:hover,
+.engineer-bar-item:focus-visible {
+  outline: none;
+}
+
+.engineer-bar-item:hover strong,
+.engineer-bar-item:focus-visible strong {
+  color: var(--teal);
+}
+
+.engineer-bar-item small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.bar-hours {
+  font-weight: 800;
 }
 
 .bar-track {
@@ -847,6 +968,70 @@ textarea:focus {
 .form-hint {
   color: var(--muted);
   font-size: 0.84rem;
+}
+
+.ai-suggestion-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px 12px;
+  align-items: center;
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid rgba(15, 118, 110, 0.18);
+  border-radius: 8px;
+  background: var(--teal-soft);
+}
+
+.ai-suggestion-card h5 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.ai-suggestion-card span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.suggestion-score {
+  display: grid;
+  min-width: 64px;
+  min-height: 54px;
+  place-items: center;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.suggestion-score strong {
+  color: var(--teal);
+  font-size: 1.1rem;
+}
+
+.suggestion-score span {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.suggestion-reasons {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.suggestion-reasons span {
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border: 1px solid rgba(15, 118, 110, 0.16);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.72rem;
+  font-weight: 800;
 }
 
 .primary-button,
@@ -941,6 +1126,70 @@ textarea:focus {
 .contract-meta strong,
 .machine-meta strong {
   color: var(--ink);
+}
+
+.machine-history-timeline {
+  display: grid;
+  gap: 10px;
+}
+
+.machine-history-event {
+  position: relative;
+  display: grid;
+  gap: 7px;
+  padding: 12px 12px 12px 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.machine-history-event::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 4px;
+  border-radius: 999px;
+  background: var(--teal);
+}
+
+.machine-history-event.status-Delayed::before {
+  background: var(--red);
+}
+
+.machine-history-event.status-Completed::before {
+  background: var(--green);
+}
+
+.machine-history-event div {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.machine-history-event strong {
+  color: var(--ink);
+  font-size: 0.95rem;
+}
+
+.machine-history-event .event-date,
+.machine-history-event small {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.machine-history-event p {
+  margin: 0;
+  color: var(--ink);
+  line-height: 1.45;
+}
+
+.machine-complaint-note {
+  margin-bottom: 10px;
 }
 
 .util-track {
@@ -1360,6 +1609,69 @@ textarea:focus {
   background: var(--surface-soft);
 }
 
+.handoff-log-panel {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.handoff-update-form {
+  display: grid;
+  gap: 12px;
+}
+
+.handoff-update-form label {
+  display: grid;
+  gap: 7px;
+  color: #303637;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.handoff-update-action {
+  display: flex;
+  align-items: end;
+}
+
+.handoff-timeline {
+  display: grid;
+  gap: 9px;
+}
+
+.handoff-update-item {
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.handoff-update-item div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.handoff-update-item strong {
+  font-size: 0.88rem;
+}
+
+.handoff-update-item span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.handoff-update-item p {
+  margin: 7px 0 0;
+  color: var(--ink);
+  line-height: 1.4;
+}
+
 .notification-list {
   display: grid;
   gap: 10px;
@@ -1537,14 +1849,18 @@ textarea:focus {
   .machine-grid,
   .detail-summary-grid,
   .entitlement-grid,
-  .pipeline-split {
+  .pipeline-split,
+  .supplier-plan-card {
     grid-template-columns: 1fr;
+  }
+
+  .supplier-allocation {
+    justify-items: start;
   }
 
   .two-col,
   .three-col,
-  .four-col,
-  .workflow-steps {
+  .four-col {
     grid-template-columns: 1fr;
   }
 
